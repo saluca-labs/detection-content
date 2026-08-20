@@ -1,0 +1,49 @@
+{
+  "title": "Agentic Intrusion: A Detection Engineering Analysis of the July 2026 Taiwan Campaign, and a Tempo Model for Agent-Driven Attacks",
+  "upload_type": "publication",
+  "publication_type": "report",
+  "description": "<p>A detection engineering analysis of the July 2026 campaign against Taiwanese government and energy targets, in which an operator ran up to eight LLM agents concurrently, built on the open-source Hermes and OpenClaw frameworks, mapping 21 government systems over four days and compromising 85 or more accounts and over 2,500 personnel records before expanding to a nuclear safety regulator and at least seven energy companies.</p><p><strong>No atomic indicators were published for this campaign.</strong> No hashes, addresses, domains or filenames. The paper therefore argues that what remains detectable is rhythm, and its contribution is a <strong>tempo model</strong>: three classes of actor produce three distinguishable signatures in access telemetry. A human is slow and irregular. A script is fast and uniform and does not change technique when it fails. An agent emits machine-speed bursts separated by inference-latency pauses, and changes technique after a failure because a planner re-ranked its options. That joint signature is a consequence of the method rather than a choice by the operator, so it survives changes of framework, model, provider and infrastructure.</p><p>The paper also argues that the reported guardrail bypass, in which operators framed the campaign as an authorized penetration test the model had no way to verify, is not a jailbreak and not primarily a model-safety failure. It is a separation-of-duties failure: the component taking the actions was also the component adjudicating whether it was permitted to.</p><p>Detections are ranked by durability rather than by ease. Sections state what the class makes undetectable, what actually found the campaign (not network defence), four conditions that would falsify the tempo model, and what the authors are explicitly not claiming.</p><p>Companion detection content, covering Sigma, KQL, SPL and Suricata plus a read-only exposure sweep, is published at <a href=\"https://github.com/saluca-labs/detection-content\">saluca-labs/detection-content</a> under Apache-2.0.</p>",
+  "creators": [
+    {
+      "name": "Ruvalcaba, Cristian",
+      "affiliation": "Saluca LLC"
+    },
+    {
+      "name": "Saluca Agentic AI Research Team",
+      "affiliation": "Saluca LLC"
+    }
+  ],
+  "keywords": [
+    "detection engineering",
+    "threat detection",
+    "agentic ai security",
+    "llm agents",
+    "autonomous cyberattack",
+    "sigma rules",
+    "suricata",
+    "threat intelligence",
+    "incident response",
+    "blue team",
+    "authorization",
+    "tempo analysis"
+  ],
+  "license": "cc-by-4.0",
+  "access_right": "open",
+  "version": "1.0",
+  "publication_date": "2026-08-20",
+  "related_identifiers": [
+    {
+      "identifier": "10.5281/zenodo.21880002",
+      "relation": "isPartOf",
+      "resource_type": "publication-report",
+      "scheme": "doi"
+    },
+    {
+      "identifier": "https://github.com/saluca-labs/detection-content",
+      "relation": "isSupplementedBy",
+      "resource_type": "software",
+      "scheme": "url"
+    }
+  ],
+  "notes": "Second in a series of detection engineering analyses from Saluca Labs; the first, \"Borrowed Trust\", is 10.5281/zenodo.21880002. Each analysis is deposited separately with its own DOI so a specific campaign can be cited directly; the accompanying detection content for all campaigns is consolidated in one repository. The report text is CC-BY-4.0; the detection content and tooling are Apache-2.0 per the repository LICENSE. Built entirely from public reporting. The authors had no victim forensic artifacts, no samples and no telemetry, and detonated nothing. No rule in the companion package has been tested against telemetry from this campaign because none is public. Prepared with AI assistance (Anthropic Claude). The tempo model, tier rankings, falsification criteria and limitations are authored and reviewed by the named human author, who is responsible for the claims."
+}
