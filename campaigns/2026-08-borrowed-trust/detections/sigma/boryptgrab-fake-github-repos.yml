@@ -1,0 +1,408 @@
+# Sigma rule collection - BoryptGrab-lineage infostealer via fake GitHub repos
+#
+# Campaign start: 2026-06-26. ~292 brand-impersonation repos.
+# Chain: fake repo README -> *.github.io redirector -> distribution domain ->
+#        ZIP with signed WinGUP gup.exe (renamed) + trojanized libcurl.dll ->
+#        DLL sideload -> in-memory stealer -> POST /upload exfil to Proton66.
+#
+# Ref: https://arcticwolf.com/resources/blog/fake-github-repositories-deliver-boryptgrab-lineage-infostealer/
+# Author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team, 2026-08-10
+#
+# This is a multi-document YAML file (a Sigma rule collection). pySigma and sigmac
+# both read every document. Split with `yq` if your pipeline needs one rule per file.
+
+title: libcurl.dll Sideloaded From User-Writable Path
+id: 162e6576-9f99-4a78-81e0-3a8d34099eea
+status: experimental
+description: |
+  Detects the BoryptGrab delivery mechanism: a legitimate signed WinGUP gup.exe, renamed to
+  match the impersonated brand, loading a trojanized libcurl.dll out of the directory the
+  victim extracted the ZIP into. Legitimate software ships libcurl.dll inside Program Files,
+  never out of Downloads, Desktop, or a temp extraction directory.
+references:
+    - https://arcticwolf.com/resources/blog/fake-github-repositories-deliver-boryptgrab-lineage-infostealer/
+    - https://www.bleepingcomputer.com/news/security/nearly-300-github-repos-pose-as-legit-software-to-push-malware/
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-08-10
+tags:
+    - attack.defense-evasion
+    - attack.persistence
+    - attack.privilege-escalation
+    - attack.t1574.001
+    - attack.t1574.002
+logsource:
+    category: image_load
+    product: windows
+detection:
+    load_libcurl:
+        ImageLoaded|endswith: '\libcurl.dll'
+    user_writable_paths:
+        ImageLoaded|contains:
+            - '\Downloads\'
+            - '\Desktop\'
+            - '\AppData\Local\Temp\'
+            - '\AppData\Roaming\'
+            - '\Users\Public\'
+            - '\Windows\Temp\'
+    condition: load_libcurl and user_writable_paths
+falsepositives:
+    - Portable applications and developer toolchains legitimately run from a Downloads or
+      Desktop folder and can ship their own libcurl.dll. Triage on the loading image's
+      signature and on whether a sibling EXE was renamed away from gup.exe.
+    - Self-extracting installers that stage to %TEMP% before writing to Program Files.
+level: high
+
+---
+
+title: Signed WinGUP Updater Renamed To A Vendor Brand Name
+id: e8856dc4-8d0c-4405-9977-46b8c0f88ef4
+status: experimental
+description: |
+  The campaign ships the genuine, validly signed Notepad++ WinGUP updater (gup.exe) renamed
+  to the impersonated product, for example Arctic-Wolf-6.86.5.exe. The signature stays valid
+  and the original filename in the version resource still reads gup.exe, so a mismatch
+  between OriginalFileName and Image is the giveaway.
+references:
+    - https://arcticwolf.com/resources/blog/fake-github-repositories-deliver-boryptgrab-lineage-infostealer/
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-08-10
+tags:
+    - attack.defense-evasion
+    - attack.t1036.003
+    - attack.t1574.002
+logsource:
+    category: process_creation
+    product: windows
+detection:
+    winGUP:
+        OriginalFileName: 'gup.exe'
+    renamed:
+        Image|endswith: '\gup.exe'
+    condition: winGUP and not renamed
+falsepositives:
+    - Notepad++ installations that repackage the updater under a different name. Rare.
+level: high
+
+---
+
+title: BoryptGrab Stealer Staging Directory Or Output Artifact Created
+id: 0b4b0633-980c-403d-8a82-71cab5a03afd
+status: experimental
+description: |
+  The stealer has no cleanup routine and leaves its full working directory on disk. The
+  Filegraber misspelling is the single highest-fidelity artifact in the family. Any hit here
+  means the payload already executed and data was already collected. Treat as post-exfil.
+references:
+    - https://arcticwolf.com/resources/blog/fake-github-repositories-deliver-boryptgrab-lineage-infostealer/
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-08-10
+tags:
+    - attack.collection
+    - attack.credential-access
+    - attack.t1005
+    - attack.t1552.001
+    - attack.t1113
+logsource:
+    category: file_event
+    product: windows
+detection:
+    misspelled_dir:
+        TargetFilename|contains: '\Filegraber'
+    output_files:
+        TargetFilename|endswith:
+            - '\browser_decryption.log'
+            - '\UserInformation.txt'
+            - '\credentials_data.txt'
+            - '\Discord_tokens.txt'
+            - '\steam_accounts.txt'
+            - '\installed_applications.txt'
+            - '\sends.log'
+    staging_tree:
+        TargetFilename|contains:
+            - '\decrypt_browser\'
+            - '\Messenger\Max\credentials.txt'
+    condition: 1 of them
+falsepositives:
+    - Effectively none. These filenames are not produced by legitimate software.
+level: critical
+
+---
+
+title: Chrome App-Bound Encryption Bypass Via Remote Thread Into Browser
+id: a37a4534-5a22-4862-b8c9-3d18b7762fad
+status: experimental
+description: |
+  The stealer defeats Chrome App-Bound Encryption by launching the browser itself with
+  CreateProcessW, allocating 0x21600 bytes with VirtualAllocEx, writing a ~134KB DLL,
+  resolving its Bootstrap export, and calling CreateRemoteThread. Detects the remote thread
+  into a browser process from a source that is not itself a browser or a known injector.
+references:
+    - https://arcticwolf.com/resources/blog/fake-github-repositories-deliver-boryptgrab-lineage-infostealer/
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-08-10
+tags:
+    - attack.credential-access
+    - attack.defense-evasion
+    - attack.t1055.001
+    - attack.t1555.003
+logsource:
+    category: create_remote_thread
+    product: windows
+detection:
+    target_browser:
+        TargetImage|endswith:
+            - '\chrome.exe'
+            - '\msedge.exe'
+            - '\brave.exe'
+            - '\opera.exe'
+            - '\vivaldi.exe'
+            - '\yandex.exe'
+    source_is_browser:
+        SourceImage|endswith:
+            - '\chrome.exe'
+            - '\msedge.exe'
+            - '\brave.exe'
+            - '\opera.exe'
+            - '\vivaldi.exe'
+            - '\yandex.exe'
+    known_good_sources:
+        SourceImage|startswith:
+            - 'C:\Windows\System32\'
+            - 'C:\Windows\SysWOW64\'
+        SourceImage|endswith:
+            - '\svchost.exe'
+            - '\csrss.exe'
+            - '\wininit.exe'
+    condition: target_browser and not source_is_browser and not known_good_sources
+falsepositives:
+    - Endpoint DLP, session-recording, and browser-isolation agents inject into browsers by design. Allowlist them by SourceImage.
+    - Accessibility and password-manager helpers.
+level: high
+
+---
+
+title: Browser Process Memory Read By Non-Browser Process
+id: e7a9008e-6b71-413a-a1e4-35e8e1ce2e8d
+status: experimental
+description: |
+  Complements the remote-thread rule. Catches credential-store access via direct memory
+  reads against browser processes, including the App-Bound bypass and the fallback paths.
+references:
+    - https://arcticwolf.com/resources/blog/fake-github-repositories-deliver-boryptgrab-lineage-infostealer/
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-08-10
+tags:
+    - attack.credential-access
+    - attack.t1555.003
+logsource:
+    category: process_access
+    product: windows
+detection:
+    target_browser:
+        TargetImage|endswith:
+            - '\chrome.exe'
+            - '\msedge.exe'
+            - '\brave.exe'
+            - '\firefox.exe'
+    vm_read:
+        GrantedAccess|contains:
+            - '0x1410'
+            - '0x1010'
+            - '0x143a'
+            - '0x1f3fff'
+    source_is_browser:
+        SourceImage|endswith:
+            - '\chrome.exe'
+            - '\msedge.exe'
+            - '\brave.exe'
+            - '\firefox.exe'
+    condition: target_browser and vm_read and not source_is_browser
+falsepositives:
+    - EDR and AV agents. Allowlist by SourceImage.
+    - Crash reporters and telemetry helpers belonging to the browser vendor.
+level: medium
+
+---
+
+title: Steam Client Memory Scraped For Session Tokens
+id: a5cbc24c-d587-4081-ab5b-9eee06cb9b35
+status: experimental
+description: |
+  Module 7 of the stealer launches Steam if it is not running, waits 20 seconds for
+  initialization, then reads steamwebhelper.exe and steamservice.exe process memory for
+  session tokens. Nothing legitimate reads those two processes.
+references:
+    - https://arcticwolf.com/resources/blog/fake-github-repositories-deliver-boryptgrab-lineage-infostealer/
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-08-10
+tags:
+    - attack.credential-access
+    - attack.t1528
+    - attack.t1005
+logsource:
+    category: process_access
+    product: windows
+detection:
+    steam:
+        TargetImage|endswith:
+            - '\steamwebhelper.exe'
+            - '\steamservice.exe'
+    steam_family:
+        SourceImage|endswith:
+            - '\steam.exe'
+            - '\steamwebhelper.exe'
+            - '\steamservice.exe'
+    condition: steam and not steam_family
+falsepositives:
+    - EDR and anti-cheat drivers. Allowlist by SourceImage.
+level: high
+
+---
+
+title: Mass Browser Termination Preceding Credential Theft
+id: ebb6164e-92d7-4c70-8e39-070f1421e99a
+status: experimental
+description: |
+  KillBrowserProcesses terminates chrome, firefox, vivaldi, opera, brave, and msedge before
+  reading their credential stores, so the databases are unlocked and not in use. Alert on a
+  single process terminating three or more distinct browsers inside a short window.
+  Correlation rule - requires a backend that supports Sigma correlations.
+references:
+    - https://arcticwolf.com/resources/blog/fake-github-repositories-deliver-boryptgrab-lineage-infostealer/
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-08-10
+tags:
+    - attack.defense-evasion
+    - attack.credential-access
+    - attack.t1489
+logsource:
+    category: process_access
+    product: windows
+detection:
+    browsers:
+        TargetImage|endswith:
+            - '\chrome.exe'
+            - '\firefox.exe'
+            - '\vivaldi.exe'
+            - '\opera.exe'
+            - '\brave.exe'
+            - '\msedge.exe'
+    terminate:
+        GrantedAccess|contains: '0x1'
+    condition: browsers and terminate
+falsepositives:
+    - Browser updaters restarting their own product.
+    - User-initiated Task Manager kills.
+level: low
+
+---
+
+title: BoryptGrab Exfiltration Over Plaintext HTTP POST /upload
+id: e267d0b5-7b74-48b4-b8d1-2e47adf8bbfc
+status: experimental
+description: |
+  The stealer packages everything into a ZIP and pushes it over a raw Winsock plaintext HTTP
+  POST to /upload with X-Filename and X-Size headers and chunked transfer encoding, straight
+  to a hardcoded Proton66 IP with no domain and no TLS.
+references:
+    - https://arcticwolf.com/resources/blog/fake-github-repositories-deliver-boryptgrab-lineage-infostealer/
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-08-10
+tags:
+    - attack.exfiltration
+    - attack.t1048.003
+    - attack.t1041
+logsource:
+    category: proxy
+detection:
+    method_path:
+        cs-method: 'POST'
+        cs-uri-stem: '/upload'
+    custom_headers:
+        cs-header|contains:
+            - 'X-Filename'
+            - 'X-Size'
+    plaintext_to_ip:
+        cs-uri-scheme: 'http'
+    condition: method_path and (custom_headers or plaintext_to_ip)
+falsepositives:
+    - Internal file-upload endpoints that happen to sit at /upload. Scope by destination reputation.
+level: high
+
+---
+
+title: BoryptGrab Campaign Infrastructure Contacted
+id: fde896b4-eb79-4718-b6d8-f2c6112722e9
+status: stable
+description: |
+  Direct IOC match on the published distribution, TDS, and C2 infrastructure. Includes the
+  Proton66 netblock 193.143.1.0/24, which held a prior BoryptGrab C2 at .104 and is worth
+  blocking wholesale rather than by single address.
+references:
+    - https://arcticwolf.com/resources/blog/fake-github-repositories-deliver-boryptgrab-lineage-infostealer/
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-08-10
+tags:
+    - attack.command-and-control
+    - attack.exfiltration
+    - attack.t1071.001
+logsource:
+    category: dns_query
+    product: windows
+detection:
+    domains:
+        QueryName|contains:
+            - 'targetroyena.com'
+            - 'furiesniffer.com'
+            - 'fleecykobird.com'
+            - 'balafohoaxee.com'
+            - 'yontzarpzenu.com'
+            - 'eggcupmadras.com'
+            - 'lafferdingar.com'
+            - 'palchknosp.com'
+            - 'brakerhotdog.com'
+            - 'sellietuskar.com'
+            - 'logic-prox.com'
+            - 'hamletlunoid.com'
+            - 'parnelmentha.com'
+            - 'refonttaught.com'
+            - 'bentleyvazquezpvey.github.io'
+    condition: domains
+falsepositives:
+    - Threat-intel tooling and sandbox detonation hosts resolving IOCs on purpose.
+level: critical
+
+---
+
+title: BoryptGrab Fake Download Page Or Payload Endpoint Accessed
+id: 6b5161bc-2880-4f70-a597-c2a8366e01db
+status: experimental
+description: |
+  The distribution hosts serve one templated gh-downloader page across all ~292 impersonated
+  brands. The payload endpoint takes a rotating user_code and the referring github.io domain,
+  and returns a freshly rebuilt ZIP roughly every 60 seconds. The URI shape survives the
+  domain rotation, so this outlives any single-domain block.
+references:
+    - https://arcticwolf.com/resources/blog/fake-github-repositories-deliver-boryptgrab-lineage-infostealer/
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-08-10
+tags:
+    - attack.initial-access
+    - attack.command-and-control
+    - attack.t1189
+    - attack.t1608.001
+logsource:
+    category: proxy
+detection:
+    payload_endpoint:
+        cs-uri-query|contains|all:
+            - 'user_code='
+            - 'domain='
+    payload_path:
+        cs-uri-stem|contains: '/download-archive'
+    github_io_referrer_to_nongithub:
+        cs-referrer|contains: '.github.io'
+    condition: payload_path and (payload_endpoint or github_io_referrer_to_nongithub)
+falsepositives:
+    - Legitimate services using a /download-archive route. Confirm the destination is not a CDN and not the vendor's real domain.
+level: high

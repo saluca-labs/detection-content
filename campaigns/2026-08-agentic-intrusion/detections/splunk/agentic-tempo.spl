@@ -1,0 +1,197 @@
+* Agentic intrusion detection for Splunk: tempo, breadth, and concurrency.
+*
+* No indicators were published for the July 2026 Taiwan campaign, so these searches profile
+* HOW the intruder behaved rather than what it touched.
+*
+* THE CORE IDEA
+* -------------
+* Three actors produce three different rhythms in an authentication log.
+*
+*   human    slow, irregular, long gaps. Seconds to minutes. Technique changes follow
+*            reading and thinking, so they are rare and slow.
+*   script   fast and uniform. Sub-second intervals, very low variance, and crucially it
+*            does NOT change technique on failure. It continues or it stops.
+*   agent    machine-speed BURSTS separated by INFERENCE LATENCY, typically 2 to 30 seconds,
+*            and it CHANGES TECHNIQUE after a failure because a planner re-ranked its
+*            options.
+*
+* That third pattern is not something the other two produce. It is a property of
+* inference-driven planning, so it survives the operator swapping frameworks, models, or
+* infrastructure. It is the most durable signal in this pack.
+*
+* TUNE BEFORE ENABLING. The thresholds below are reasoned from published inference
+* latencies, not measured from the campaign, whose telemetry was never released. Baseline
+* your own estate first. Every search here is written to be run interactively before it is
+* ever considered as an alert.
+*
+* Author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team, 2026-08-20
+* Ref: https://securityaffairs.com/197079/apt/china-linked-hackers-use-ai-agents-in-autonomous-attack-on-taiwan.html
+* License: Apache-2.0
+
+
+* ===========================================================================
+* 1. TEMPO PROFILE - the burst / think-pause / adapt signature
+* ===========================================================================
+* Scores each source on how agent-shaped its rhythm is. Run over 24h to start.
+* Read the output as a ranking to investigate, not as a verdict.
+
+index=auth OR index=wineventlog (action=success OR action=failure)
+| fields _time src_ip user dest action signature EventCode
+| eval technique = coalesce(signature, EventCode, action)
+| sort 0 src_ip _time
+| streamstats current=f window=1 last(_time) AS prev_time last(technique) AS prev_technique
+    last(action) AS prev_action last(dest) AS prev_dest BY src_ip
+| eval delta = _time - prev_time
+| where isnotnull(delta) AND delta >= 0
+*  Classify each interval into the three regimes.
+| eval band = case(
+      delta < 1.0,                 "burst",
+      delta >= 2.0 AND delta <= 30.0, "think",
+      delta > 60.0,                "human",
+      true(),                      "other")
+*  The adaptation signal: technique changed immediately after a failure.
+| eval adapted_after_failure = if(prev_action="failure" AND technique != prev_technique, 1, 0)
+*  A think-pause that precedes a technique change is the strongest single interval:
+*  that is the shape of "the planner considered, then chose differently".
+| eval planner_pause = if(band="think" AND technique != prev_technique, 1, 0)
+| stats count AS events
+        sum(eval(band="burst")) AS bursts
+        sum(eval(band="think"))  AS thinks
+        sum(eval(band="human"))  AS human_gaps
+        sum(adapted_after_failure) AS adaptations
+        sum(planner_pause) AS planner_pauses
+        dc(dest) AS distinct_targets
+        dc(user) AS distinct_users
+        dc(technique) AS distinct_techniques
+        stdev(delta) AS delta_stdev
+        avg(delta) AS delta_avg
+        min(_time) AS first_seen max(_time) AS last_seen
+    BY src_ip
+| where events >= 20
+| eval burst_ratio = round(bursts / events, 3)
+| eval think_ratio = round(thinks / events, 3)
+| eval human_ratio = round(human_gaps / events, 3)
+| eval duration_min = round((last_seen - first_seen) / 60, 1)
+*  SCORING. Agent-shaped means: meaningful bursts, a healthy think band, few human-length
+*  gaps, and observed adaptation. Scripts score high on burst and near zero on think and
+*  adaptation. Humans score high on human_ratio.
+| eval score = round(
+        (burst_ratio * 25)
+      + (think_ratio * 30)
+      + (if(adaptations > 0, 20, 0))
+      + (if(planner_pauses >= 3, 15, 0))
+      + (if(distinct_techniques >= 3, 10, 0))
+      - (human_ratio * 30), 1)
+| eval verdict = case(
+      score >= 60, "AGENT-SHAPED - investigate",
+      score >= 40, "possible agent - review",
+      burst_ratio > 0.8 AND adaptations = 0, "likely script",
+      human_ratio > 0.5, "likely human",
+      true(), "unclear")
+| table src_ip verdict score events duration_min burst_ratio think_ratio human_ratio
+        adaptations planner_pauses distinct_targets distinct_users distinct_techniques
+        delta_avg delta_stdev
+| sort - score
+
+
+* ===========================================================================
+* 2. BREADTH WITH ADAPTATION
+* ===========================================================================
+* Scanners are broad and uniform. Humans are narrow and adaptive. Agents are broad AND
+* adaptive: the Taiwan operator mapped 21 government systems in four days while changing
+* technique between them. This search isolates that combination directly.
+
+index=auth OR index=wineventlog
+| fields _time src_ip user dest action signature EventCode
+| eval technique = coalesce(signature, EventCode, action)
+| bin _time span=1h
+| stats dc(dest) AS targets_this_hour dc(technique) AS techniques_this_hour
+        dc(user) AS users_this_hour count AS events BY src_ip _time
+| stats sum(events) AS total_events
+        max(targets_this_hour) AS peak_targets_hr
+        max(techniques_this_hour) AS peak_techniques_hr
+        dc(_time) AS active_hours
+        avg(techniques_this_hour) AS avg_techniques_hr
+    BY src_ip
+*  Broad AND adaptive AND sustained. Any one of these alone is ordinary.
+| where peak_targets_hr >= 5 AND avg_techniques_hr >= 2.0 AND active_hours >= 3
+| eval note = "broad + adaptive + sustained: scanner-like reach with human-like variation"
+| table src_ip note total_events peak_targets_hr peak_techniques_hr avg_techniques_hr active_hours
+| sort - peak_targets_hr
+
+
+* ===========================================================================
+* 3. CONCURRENCY - several agents, different jobs, one origin
+* ===========================================================================
+* Up to eight agents ran at once, "each working a different angle". That is the distinction
+* from a threaded scanner, which parallelises the SAME action. Here the parallel streams are
+* doing DIFFERENT things at the same moment, which is what a coordinated team looks like.
+
+index=auth OR index=wineventlog
+| fields _time src_ip user dest action signature EventCode
+| eval technique = coalesce(signature, EventCode, action)
+| bin _time span=1m
+| stats dc(technique) AS concurrent_techniques dc(dest) AS concurrent_targets
+        count AS events values(technique) AS techniques BY src_ip _time
+*  Four or more genuinely distinct activities inside one minute from one source.
+| where concurrent_techniques >= 4 AND concurrent_targets >= 3
+| eval note = "multiple distinct activities in parallel from one origin"
+| table _time src_ip note concurrent_techniques concurrent_targets events techniques
+| sort - concurrent_techniques
+
+
+* ===========================================================================
+* 4. CORRELATION - inference traffic beside authentication activity
+* ===========================================================================
+* The highest-confidence search in this file, and the cheapest to justify to a stakeholder.
+* If a host is calling an inference API in the same minutes it is generating authentication
+* activity, an LLM is in the decision loop. Nothing else explains the pairing.
+*
+* Requires proxy or DNS telemetry joined to auth. Defeated by self-hosted inference.
+
+index=proxy OR index=dns
+| eval inference = if(match(coalesce(url, query, dest_host),
+      "api\.anthropic\.com|api\.openai\.com|openrouter\.ai|generativelanguage\.googleapis\.com|api\.mistral\.ai|api\.groq\.com|api\.deepseek\.com"), 1, 0)
+| where inference = 1
+| bin _time span=1m
+| stats count AS inference_calls BY src_ip _time
+| join type=inner src_ip _time [
+    search index=auth OR index=wineventlog (action=success OR action=failure)
+    | bin _time span=1m
+    | stats count AS auth_events dc(dest) AS auth_targets BY src_ip _time ]
+| where inference_calls >= 3 AND auth_events >= 3
+| eval note = "inference API traffic interleaved with authentication activity from one host"
+| stats sum(inference_calls) AS inference_calls sum(auth_events) AS auth_events
+        max(auth_targets) AS peak_targets dc(_time) AS minutes_correlated BY src_ip
+| where minutes_correlated >= 3
+| table src_ip note inference_calls auth_events peak_targets minutes_correlated
+| sort - minutes_correlated
+
+
+* ===========================================================================
+* 5. BASELINE HELPER - run this FIRST
+* ===========================================================================
+* Establishes what normal looks like in your estate before any of the above is trusted.
+* Run over 30 days of known-good activity and use the percentiles to replace the thresholds
+* in searches 1 to 3. Skipping this step is how a detection pack becomes a false-positive
+* generator.
+
+index=auth OR index=wineventlog (action=success OR action=failure) earliest=-30d
+| fields _time src_ip dest action signature EventCode
+| eval technique = coalesce(signature, EventCode, action)
+| sort 0 src_ip _time
+| streamstats current=f window=1 last(_time) AS prev_time BY src_ip
+| eval delta = _time - prev_time
+| where isnotnull(delta) AND delta >= 0 AND delta < 3600
+| stats count AS intervals
+        perc50(delta) AS p50_delta perc90(delta) AS p90_delta perc99(delta) AS p99_delta
+        sum(eval(delta < 1.0)) AS sub_second
+        sum(eval(delta >= 2.0 AND delta <= 30.0)) AS think_band
+    BY src_ip
+| eval burst_ratio = round(sub_second / intervals, 3)
+| eval think_ratio = round(think_band / intervals, 3)
+| stats perc50(burst_ratio) AS median_burst_ratio perc95(burst_ratio) AS p95_burst_ratio
+        perc50(think_ratio) AS median_think_ratio perc95(think_ratio) AS p95_think_ratio
+        perc50(p50_delta) AS typical_interval count AS sources
+| eval guidance = "Set the burst and think thresholds in search 1 above your p95 values, not at the defaults"
+| table sources typical_interval median_burst_ratio p95_burst_ratio median_think_ratio p95_think_ratio guidance

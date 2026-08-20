@@ -1,0 +1,333 @@
+# ============================================================================
+# Suricata rules - GH/VPN campaign sweep
+#
+#   A. BoryptGrab-lineage infostealer  (fake GitHub repos)
+#   B. QuickFox VPN supply chain       (FDMTP, Mustang Panda lineage)
+#   C. "Free VPN for PC" GitHub repo   (Lumma Stealer)
+#
+# Author : Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+# Date   : 2026-08-10
+# Ref    : README.md
+#
+# SID range 1000000-1000099 (local rules). Renumber to fit your allocation.
+# Requires Suricata 6+ for the http.* and tls.* sticky buffers, 7+ for http2 keywords.
+#
+# Deployment note: the behavioural rules (POST /upload shape, /download-archive
+# endpoint, DotNet-TcpFDMTP protocol string, github.io referrer mismatch) are the
+# durable ones. The IP and domain rules decay - BoryptGrab rotates payloads about
+# every 60 seconds and had ~78 redirector accounts live at once.
+# ============================================================================
+
+
+# ----------------------------------------------------------------------------
+# A. BoryptGrab
+# ----------------------------------------------------------------------------
+
+# Exfiltration. Raw Winsock plaintext POST with the campaign's custom headers.
+# Both headers plus chunked encoding on a bare-IP destination is the full shape.
+alert http $HOME_NET any -> $EXTERNAL_NET any (
+    msg:"SALUCA A-BoryptGrab infostealer exfil POST /upload with X-Filename and X-Size";
+    flow:established,to_server;
+    http.method; content:"POST";
+    http.uri; content:"/upload"; depth:7;
+    http.header; content:"X-Filename"; nocase;
+    http.header; content:"X-Size"; nocase;
+    reference:url,arcticwolf.com/resources/blog/fake-github-repositories-deliver-boryptgrab-lineage-infostealer/;
+    classtype:data-theft;
+    metadata:campaign BoryptGrab, attack_target Client_Endpoint, created_at 2026_08_10;
+    sid:1000001; rev:1;
+)
+
+# Same exfil, keyed only on the header pair, in case the URI path changes.
+alert http $HOME_NET any -> $EXTERNAL_NET any (
+    msg:"SALUCA A-BoryptGrab custom exfil header pair X-Filename plus X-Size";
+    flow:established,to_server;
+    http.method; content:"POST";
+    http.header_names; content:"X-Filename"; nocase; content:"X-Size"; nocase;
+    threshold:type limit, track by_src, count 1, seconds 300;
+    reference:url,arcticwolf.com/resources/blog/fake-github-repositories-deliver-boryptgrab-lineage-infostealer/;
+    classtype:data-theft;
+    metadata:campaign BoryptGrab, created_at 2026_08_10;
+    sid:1000002; rev:1;
+)
+
+# Hardcoded C2. Also covers the wider Proton66 /24, which held a prior BoryptGrab C2 at .104.
+alert ip $HOME_NET any -> 193.143.1.0/24 any (
+    msg:"SALUCA A-BoryptGrab C2 netblock Proton66 193.143.1.0/24";
+    reference:url,arcticwolf.com/resources/blog/fake-github-repositories-deliver-boryptgrab-lineage-infostealer/;
+    classtype:command-and-control;
+    metadata:campaign BoryptGrab, created_at 2026_08_10;
+    sid:1000003; rev:1;
+)
+
+alert ip $HOME_NET any -> [45.93.20.61,2.27.5.63,77.91.96.188,185.100.157.222,193.221.201.165,217.145.226.0,217.145.227.254] any (
+    msg:"SALUCA A-BoryptGrab distribution or reference C2 infrastructure";
+    reference:url,arcticwolf.com/resources/blog/fake-github-repositories-deliver-boryptgrab-lineage-infostealer/;
+    classtype:command-and-control;
+    metadata:campaign BoryptGrab, created_at 2026_08_10;
+    sid:1000004; rev:1;
+)
+
+# Payload-generation endpoint. URI shape survives domain rotation.
+alert http $HOME_NET any -> $EXTERNAL_NET any (
+    msg:"SALUCA A-BoryptGrab payload endpoint /download-archive with user_code and domain";
+    flow:established,to_server;
+    http.uri; content:"/download-archive"; nocase;
+    http.uri; content:"user_code="; nocase; distance:0;
+    http.uri; content:"domain="; nocase; distance:0;
+    reference:url,arcticwolf.com/resources/blog/fake-github-repositories-deliver-boryptgrab-lineage-infostealer/;
+    classtype:trojan-activity;
+    metadata:campaign BoryptGrab, created_at 2026_08_10;
+    sid:1000005; rev:1;
+)
+
+# The templated gh-downloader delivery page, identified by its hardcoded title.
+alert http $EXTERNAL_NET any -> $HOME_NET any (
+    msg:"SALUCA A-BoryptGrab templated fake download page title Github Download";
+    flow:established,to_client;
+    http.response_body; content:"<title>"; nocase;
+    http.response_body; content:"Github Download"; nocase; distance:0; within:40;
+    reference:url,arcticwolf.com/resources/blog/fake-github-repositories-deliver-boryptgrab-lineage-infostealer/;
+    classtype:trojan-activity;
+    metadata:campaign BoryptGrab, created_at 2026_08_10;
+    sid:1000006; rev:1;
+)
+
+# The alert() string the page throws when the user_code path token is missing.
+alert http $EXTERNAL_NET any -> $HOME_NET any (
+    msg:"SALUCA A-BoryptGrab delivery page gatekeeper string";
+    flow:established,to_client;
+    http.response_body; content:"Invalid access. Please return to the main page."; nocase;
+    reference:url,arcticwolf.com/resources/blog/fake-github-repositories-deliver-boryptgrab-lineage-infostealer/;
+    classtype:trojan-activity;
+    metadata:campaign BoryptGrab, created_at 2026_08_10;
+    sid:1000007; rev:1;
+)
+
+# Archive fetched with a github.io referrer from a host that is not GitHub.
+# This is the lure shape itself, independent of any named domain.
+alert http $HOME_NET any -> $EXTERNAL_NET any (
+    msg:"SALUCA A-BoryptGrab archive download referred from github.io but not hosted by GitHub";
+    flow:established,to_server;
+    http.referer; content:".github.io"; nocase;
+    http.uri; content:".zip"; nocase; endswith;
+    http.host; content:!"github.com"; nocase;
+    http.host; content:!"githubusercontent.com"; nocase;
+    http.host; content:!"githubassets.com"; nocase;
+    threshold:type limit, track by_src, count 1, seconds 600;
+    classtype:trojan-activity;
+    metadata:campaign BoryptGrab, created_at 2026_08_10;
+    sid:1000008; rev:1;
+)
+
+# Distribution and TDS domains, DNS side.
+alert dns $HOME_NET any -> any any (
+    msg:"SALUCA A-BoryptGrab distribution or TDS domain lookup";
+    dns.query;
+    content:"targetroyena.com"; nocase; endswith;
+    reference:url,arcticwolf.com/resources/blog/fake-github-repositories-deliver-boryptgrab-lineage-infostealer/;
+    classtype:command-and-control;
+    metadata:campaign BoryptGrab, created_at 2026_08_10;
+    sid:1000009; rev:1;
+)
+
+alert dns $HOME_NET any -> any any (
+    msg:"SALUCA A-BoryptGrab TDS domain lookup (rotating set)";
+    dns.query;
+    pcre:"/(furiesniffer|fleecykobird|balafohoaxee|yontzarpzenu|eggcupmadras|lafferdingar|palchknosp|brakerhotdog|sellietuskar|hamletlunoid|parnelmentha|refonttaught)\.com$/i";
+    reference:url,arcticwolf.com/resources/blog/fake-github-repositories-deliver-boryptgrab-lineage-infostealer/;
+    classtype:command-and-control;
+    metadata:campaign BoryptGrab, created_at 2026_08_10;
+    sid:1000010; rev:1;
+)
+
+alert dns $HOME_NET any -> any any (
+    msg:"SALUCA A-BoryptGrab TDS domain lookup logic-prox.com";
+    dns.query; content:"logic-prox.com"; nocase; endswith;
+    classtype:command-and-control;
+    metadata:campaign BoryptGrab, created_at 2026_08_10;
+    sid:1000011; rev:1;
+)
+
+# TLS SNI companion, for when DNS is resolved out of band (DoH, hosts file, cache).
+alert tls $HOME_NET any -> $EXTERNAL_NET any (
+    msg:"SALUCA A-BoryptGrab distribution domain in TLS SNI";
+    tls.sni;
+    pcre:"/(targetroyena|furiesniffer|fleecykobird|balafohoaxee|yontzarpzenu|eggcupmadras|lafferdingar|palchknosp|brakerhotdog|sellietuskar|logic-prox|hamletlunoid|parnelmentha|refonttaught)\.com$/i";
+    classtype:command-and-control;
+    metadata:campaign BoryptGrab, created_at 2026_08_10;
+    sid:1000012; rev:1;
+)
+
+# Geolocation beacon immediately preceding exfil. Low fidelity alone - use as a
+# correlation input, not a standalone alert.
+alert http $HOME_NET any -> $EXTERNAL_NET any (
+    msg:"SALUCA A-BoryptGrab geolocation precursor ip-api country_code lookup";
+    flow:established,to_server;
+    http.host; content:"ip-api.com"; nocase;
+    http.uri; content:"/country_code/"; nocase;
+    threshold:type limit, track by_src, count 1, seconds 3600;
+    classtype:misc-activity;
+    metadata:campaign BoryptGrab, confidence low, created_at 2026_08_10;
+    sid:1000013; rev:1;
+)
+
+
+# ----------------------------------------------------------------------------
+# B. QuickFox / FDMTP
+# ----------------------------------------------------------------------------
+
+# The single most durable FDMTP indicator. This protocol identifier is unique to
+# the family and survives both domain rotation and endpoint-name rotation
+# (GetCluster / GetSlaver / GetGateways / GetEndpoints / GetServers / GetHosts / GetNodes).
+alert http $HOME_NET any -> $EXTERNAL_NET any (
+    msg:"SALUCA B-QuickFox FDMTP cluster registration protocol DotNet-TcpFDMTP";
+    flow:established,to_server;
+    http.uri; content:"protocol=DotNet-TcpFDMTP"; nocase;
+    reference:url,fortinet.com/blog/threat-research/quickfox-supply-chain-attack-used-to-deploy-fdmtp-implant;
+    classtype:command-and-control;
+    metadata:campaign QuickFox_FDMTP, actor Mustang_Panda, created_at 2026_08_10;
+    sid:1000020; rev:1;
+)
+
+# Registration endpoint names paired with the staging domain set.
+alert http $HOME_NET any -> $EXTERNAL_NET any (
+    msg:"SALUCA B-QuickFox FDMTP registration endpoint on staging domain";
+    flow:established,to_server;
+    http.uri; pcre:"/^\/Get(Cluster|Slaver|Gateways|Endpoints|Servers|Hosts|Nodes)\?/i";
+    http.host; pcre:"/(icloud-cdn\.net|google-apis\.net|yahoo-cdn\.it\.com|wangmeng\.xyz|wangmengsb\.com|wangmeng66\.top|techcheck1\.com)$/i";
+    reference:url,fortinet.com/blog/threat-research/quickfox-supply-chain-attack-used-to-deploy-fdmtp-implant;
+    classtype:command-and-control;
+    metadata:campaign QuickFox_FDMTP, created_at 2026_08_10;
+    sid:1000021; rev:1;
+)
+
+# The trojanized-client loader host. Typosquats the real vendor domain 51quickfox.com
+# by swapping the TLD to .cn. Any lookup means a backdoored build phoned home.
+alert dns $HOME_NET any -> any any (
+    msg:"SALUCA B-QuickFox trojanized updater host cdns3.51quickfox.cn";
+    dns.query; content:"cdns3.51quickfox.cn"; nocase; endswith;
+    reference:url,fortinet.com/blog/threat-research/quickfox-supply-chain-attack-used-to-deploy-fdmtp-implant;
+    classtype:trojan-activity;
+    metadata:campaign QuickFox_FDMTP, created_at 2026_08_10;
+    sid:1000022; rev:1;
+)
+
+# FDMTP staging domains. Note the deliberate CDN-lookalike naming.
+alert dns $HOME_NET any -> any any (
+    msg:"SALUCA B-QuickFox FDMTP staging domain lookup";
+    dns.query;
+    pcre:"/(icloud-cdn\.net|google-apis\.net|yahoo-cdn\.it\.com|wangmeng\.xyz|wangmengsb\.com|wangmeng66\.top|techcheck1\.com)$/i";
+    reference:url,fortinet.com/blog/threat-research/quickfox-supply-chain-attack-used-to-deploy-fdmtp-implant;
+    classtype:command-and-control;
+    metadata:campaign QuickFox_FDMTP, created_at 2026_08_10;
+    sid:1000023; rev:1;
+)
+
+alert tls $HOME_NET any -> $EXTERNAL_NET any (
+    msg:"SALUCA B-QuickFox FDMTP staging domain in TLS SNI";
+    tls.sni;
+    pcre:"/(51quickfox\.cn|icloud-cdn\.net|google-apis\.net|yahoo-cdn\.it\.com|wangmeng\.xyz|wangmengsb\.com|wangmeng66\.top|techcheck1\.com)$/i";
+    classtype:command-and-control;
+    metadata:campaign QuickFox_FDMTP, created_at 2026_08_10;
+    sid:1000024; rev:1;
+)
+
+# Known FDMTP cluster nodes.
+alert ip $HOME_NET any -> [47.238.64.56,47.239.93.49,47.239.4.179,47.88.21.252,47.238.240.219,154.223.75.206,154.223.58.64,45.158.180.250,154.223.58.142,38.60.142.56] any (
+    msg:"SALUCA B-QuickFox FDMTP cluster node contacted";
+    reference:url,fortinet.com/blog/threat-research/quickfox-supply-chain-attack-used-to-deploy-fdmtp-implant;
+    classtype:command-and-control;
+    metadata:campaign QuickFox_FDMTP, created_at 2026_08_10;
+    sid:1000025; rev:1;
+)
+
+# The cluster port range, to any external host. Catches nodes not yet published.
+alert tcp $HOME_NET any -> $EXTERNAL_NET 20800:20816 (
+    msg:"SALUCA B-QuickFox outbound to FDMTP cluster port range 20800-20816";
+    flow:to_server,established;
+    threshold:type limit, track by_src, count 1, seconds 600;
+    reference:url,fortinet.com/blog/threat-research/quickfox-supply-chain-attack-used-to-deploy-fdmtp-implant;
+    classtype:command-and-control;
+    metadata:campaign QuickFox_FDMTP, confidence medium, created_at 2026_08_10;
+    sid:1000026; rev:1;
+)
+
+# The malicious loader script and payload archive, fetched by the trojanized renderer.
+alert http $HOME_NET any -> $EXTERNAL_NET any (
+    msg:"SALUCA B-QuickFox malicious loader firebase-app-compat.js from quickfox CDN lookalike";
+    flow:established,to_server;
+    http.host; content:"51quickfox.cn"; nocase; endswith;
+    http.uri; content:"firebase-app-compat.js"; nocase;
+    reference:url,fortinet.com/blog/threat-research/quickfox-supply-chain-attack-used-to-deploy-fdmtp-implant;
+    classtype:trojan-activity;
+    metadata:campaign QuickFox_FDMTP, created_at 2026_08_10;
+    sid:1000027; rev:1;
+)
+
+alert http $HOME_NET any -> $EXTERNAL_NET any (
+    msg:"SALUCA B-QuickFox FDMTP payload archive update.zip retrieval";
+    flow:established,to_server;
+    http.host; content:"51quickfox.cn"; nocase; endswith;
+    http.uri; content:"update.zip"; nocase; endswith;
+    reference:url,fortinet.com/blog/threat-research/quickfox-supply-chain-attack-used-to-deploy-fdmtp-implant;
+    classtype:trojan-activity;
+    metadata:campaign QuickFox_FDMTP, created_at 2026_08_10;
+    sid:1000028; rev:1;
+)
+
+
+# ----------------------------------------------------------------------------
+# C. Free VPN for PC / Lumma
+# ----------------------------------------------------------------------------
+
+alert dns $HOME_NET any -> any any (
+    msg:"SALUCA C-LummaVPN C2 domain lookup";
+    dns.query;
+    pcre:"/(explorationmsn\.store|snailyeductyi\.sbs|ferrycheatyk\.sbs|deepymouthi\.sbs|wrigglesight\.sbs|captaitwik\.sbs|sidercotay\.sbs|heroicmint\.sbs|monstourtu\.sbs)$/i";
+    reference:url,cyfirma.com/research/github-abused-to-spread-malware-disguised-as-free-vpn/;
+    classtype:command-and-control;
+    metadata:campaign LummaVPN, created_at 2026_08_10;
+    sid:1000040; rev:1;
+)
+
+alert tls $HOME_NET any -> $EXTERNAL_NET any (
+    msg:"SALUCA C-LummaVPN C2 domain in TLS SNI";
+    tls.sni;
+    pcre:"/(explorationmsn\.store|snailyeductyi\.sbs|ferrycheatyk\.sbs|deepymouthi\.sbs|wrigglesight\.sbs|captaitwik\.sbs|sidercotay\.sbs|heroicmint\.sbs|monstourtu\.sbs)$/i";
+    classtype:command-and-control;
+    metadata:campaign LummaVPN, created_at 2026_08_10;
+    sid:1000041; rev:1;
+)
+
+# Hunt rule, not an alert. The .sbs TLD carries very little legitimate enterprise
+# traffic and is heavily used by this and other Lumma clusters. Run in alert mode
+# for a week to baseline, then decide whether to sinkhole the TLD outright.
+alert dns $HOME_NET any -> any any (
+    msg:"SALUCA HUNT rare TLD .sbs lookup - baseline before enforcing";
+    dns.query; content:".sbs"; nocase; endswith;
+    threshold:type limit, track by_src, count 1, seconds 3600;
+    classtype:misc-activity;
+    metadata:campaign LummaVPN, confidence low, created_at 2026_08_10;
+    sid:1000042; rev:1;
+)
+
+
+# ----------------------------------------------------------------------------
+# Cross-campaign file-transaction rules
+# Require file-store or file extraction enabled in suricata.yaml.
+# ----------------------------------------------------------------------------
+
+# BoryptGrab pads its ZIP to roughly 136MB to defeat sandbox and scanner size caps.
+# An oversized archive from a bare IP with no CDN in front is worth a look.
+alert http $EXTERNAL_NET any -> $HOME_NET any (
+    msg:"SALUCA HUNT oversized ZIP delivered over plaintext HTTP - possible padded stealer archive";
+    flow:established,to_client;
+    http.content_type; content:"application/zip"; nocase;
+    http.response_line; content:"200";
+    filestore;
+    threshold:type limit, track by_dst, count 1, seconds 600;
+    classtype:misc-activity;
+    metadata:confidence low, created_at 2026_08_10;
+    sid:1000060; rev:1;
+)

@@ -1,0 +1,136 @@
+# Sigma - the actual bypass. Detectable only if you sit in the inference path.
+#
+# From the reporting: operators circumvented guardrails by "framing the entire hacking
+# campaign as an authorized penetration test, a scenario the model apparently had no
+# reliable way to verify or reject."
+#
+# That is the whole incident in one sentence. Not a jailbreak, not an exploit: an ASSERTED
+# ENTITLEMENT that nothing was positioned to check. The model was simultaneously the thing
+# taking actions and the thing deciding whether it was allowed to, which is a separation-of-
+# duties failure that would be obvious in any other part of a security architecture.
+#
+# WHERE THIS WORKS. Only at a gateway, proxy, or broker you operate, where prompts are
+# observable before they reach a provider. If your model traffic goes straight from endpoint
+# to provider over TLS, you cannot see any of this and no network sensor will help you.
+#
+# WHAT TO DO ABOUT IT. Detection here is a consolation prize. The structural answer is that
+# authorization must be evaluated per request against a control plane the model cannot
+# influence, so that a claim of authorization in a prompt carries no weight at all.
+#
+# Ref: https://securityaffairs.com/197079/apt/china-linked-hackers-use-ai-agents-in-autonomous-attack-on-taiwan.html
+# Author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team, 2026-08-20
+
+title: Prompt Asserts Its Own Authorization For Offensive Activity
+id: 7b4674bd-bfb4-4cd6-ac08-e0f1024f68b8
+status: experimental
+description: |
+  A prompt reaching an LLM gateway claims the requester is authorized to perform intrusion
+  activity. This is the exact technique used against Taiwan in July 2026: the operator told
+  the model the engagement was a sanctioned penetration test and the model had no way to
+  verify the claim.
+
+  Fire this on the combination of an authorization claim and offensive intent. Either alone
+  is common and benign; together they are the documented bypass.
+
+  Note the asymmetry that makes this worth alerting on: a genuinely authorized tester has a
+  scope document, a signed engagement, and a named client contact. None of those live in a
+  prompt. An assertion of authorization inside the request is, at best, unverifiable, and
+  should be treated as unverified rather than as authorization.
+references:
+    - https://securityaffairs.com/197079/apt/china-linked-hackers-use-ai-agents-in-autonomous-attack-on-taiwan.html
+    - https://www.cnn.com/2026/08/13/tech/china-taiwan-ai-agent-cyberattack-intl-hnk
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-08-20
+tags:
+    - atlas.aml-t0054
+    - atlas.aml-t0051
+    - attack.defense-evasion
+    - attack.execution
+logsource:
+    product: llm_gateway
+    category: prompt
+detection:
+    authorization_claim:
+        prompt|contains:
+            - 'authorized penetration test'
+            - 'authorised penetration test'
+            - 'authorized pentest'
+            - 'sanctioned red team'
+            - 'approved red team'
+            - 'this is a legal engagement'
+            - 'i have permission to'
+            - 'we have written authorization'
+            - 'the client has authorized'
+            - 'scope of the engagement includes'
+            - 'you are authorized to'
+            - 'bug bounty program allows'
+    offensive_intent:
+        prompt|contains:
+            - 'exploit'
+            - 'privilege escalation'
+            - 'lateral movement'
+            - 'credential'
+            - 'exfiltrat'
+            - 'reverse shell'
+            - 'persistence mechanism'
+            - 'bypass authentication'
+            - 'dump hashes'
+            - 'enumerate the domain'
+            - 'brute force'
+    condition: authorization_claim and offensive_intent
+falsepositives:
+    - Genuine authorized testing by your own red team. This is the important one. Do not
+      suppress the rule; instead require that real engagements carry a verifiable token or
+      run under an identity scoped to the engagement, so authorized work is distinguishable
+      from a claim of authorized work. If you cannot tell them apart, that is the finding.
+    - Security training, tabletop exercises, and CTF work.
+    - Analysts pasting incident reports containing this language into a model.
+level: high
+---
+title: Agent Session Reasons About Reprioritising Attack Paths
+id: 3d9c1b47-2e58-4f0a-8b6c-1a7d5e9f2c34
+status: experimental
+description: |
+  Planner-shaped reasoning about intrusion. The Taiwan tool "continuously ranked and
+  reprioritised possible attack paths based on available evidence" and, when blocked, went
+  looking for a new approach.
+
+  This targets the planning behaviour rather than any single action, which is what makes an
+  agent campaign different from a scanner. Observable only at a gateway that logs completions
+  as well as prompts.
+
+  Expect fewer hits than the authorization rule but far higher fidelity when it fires.
+references:
+    - https://securityaffairs.com/197079/apt/china-linked-hackers-use-ai-agents-in-autonomous-attack-on-taiwan.html
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-08-20
+tags:
+    - atlas.aml-t0051
+    - attack.discovery
+    - attack.lateral-movement
+logsource:
+    product: llm_gateway
+    category: completion
+detection:
+    planning_language:
+        completion|contains:
+            - 'next attack path'
+            - 'alternative attack vector'
+            - 'that approach failed, try'
+            - 'reprioriti'
+            - 'highest value target'
+            - 'pivot to'
+    intrusion_context:
+        completion|contains:
+            - 'domain controller'
+            - 'credential'
+            - 'privilege'
+            - 'foothold'
+            - 'lateral'
+            - 'exfiltrat'
+    condition: planning_language and intrusion_context
+falsepositives:
+    - Purple team exercises and detection engineering work. Notably, writing THIS repository
+      would trigger it.
+    - Threat intelligence summarisation.
+level: medium

@@ -1,0 +1,159 @@
+# Sigma - agent framework and MCP tool-server artefacts on hosts.
+#
+# The Taiwan toolkit was 1,395 files built around Hermes (NousResearch) and OpenClaw, both
+# freely downloadable. Those frameworks are LEGITIMATE and widely installed, including in
+# our own estate, so nothing here is evidence of an intrusion by itself.
+#
+# THESE ARE HUNTING RULES, NOT ALERTS. What they answer is "where in my estate can an LLM
+# take actions", which is a question most organisations cannot currently answer at all. The
+# finding that matters is an agent framework on a host where no developer works.
+#
+# Ref: https://securityaffairs.com/197079/apt/china-linked-hackers-use-ai-agents-in-autonomous-attack-on-taiwan.html
+# Author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team, 2026-08-20
+
+title: LLM Agent Framework Executed On Non-Developer Host
+id: 517b530d-8d30-4346-b792-814d844df40f
+status: experimental
+description: |
+  Execution of an open-source LLM agent framework. Hermes and OpenClaw were the two used in
+  the July 2026 Taiwan campaign; the others are included because the technique is
+  framework-agnostic and an operator will simply pick a different one.
+
+  Scope this to hosts where a developer toolchain has no business existing. On an engineer's
+  laptop this is noise. On a file server it is the whole investigation.
+references:
+    - https://securityaffairs.com/197079/apt/china-linked-hackers-use-ai-agents-in-autonomous-attack-on-taiwan.html
+    - https://github.com/NousResearch/hermes-agent
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-08-20
+tags:
+    - attack.execution
+    - attack.t1059.006
+    - attack.discovery
+logsource:
+    category: process_creation
+    product: windows
+detection:
+    framework_binary:
+        - Image|endswith:
+            - '\hermes.exe'
+            - '\openclaw.exe'
+        - CommandLine|contains:
+            - 'hermes-agent'
+            - 'openclaw'
+            - '-m hermes'
+            - 'nousresearch/hermes'
+    framework_paths:
+        CommandLine|contains:
+            - '\AppData\Local\hermes\'
+            - '\.hermes\'
+            - '\.openclaw\'
+            - '/.hermes/'
+            - '/.openclaw/'
+    condition: framework_binary or framework_paths
+falsepositives:
+    - Developer workstations. Expected and normal. Scope by host role rather than trying to
+      enumerate exceptions.
+    - Our own estate runs a Hermes fork. Any deployment of this rule inside Saluca must
+      allowlist the known install paths first.
+level: informational
+---
+title: MCP Tool Server Spawned By Package Runner
+id: c7c4427c-0598-4127-a12c-65b1855233f4
+status: experimental
+description: |
+  A package runner (uvx, npx, pipx) launching a Model Context Protocol server. MCP servers
+  are how an agent acquires the ability to touch something real: a filesystem, a database, a
+  browser, a cloud API. An agent with no tools is a chatbot; an agent with MCP servers is an
+  actor.
+
+  On a server-class host, this is the moment an LLM gained hands. That is worth knowing
+  regardless of whether anything malicious follows.
+references:
+    - https://securityaffairs.com/197079/apt/china-linked-hackers-use-ai-agents-in-autonomous-attack-on-taiwan.html
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-08-20
+tags:
+    - attack.execution
+    - attack.t1059
+    - attack.persistence
+logsource:
+    category: process_creation
+    product: windows
+detection:
+    runner:
+        Image|endswith:
+            - '\uvx.exe'
+            - '\uv.exe'
+            - '\npx.cmd'
+            - '\npx.exe'
+            - '\pipx.exe'
+    mcp_indicator:
+        CommandLine|contains:
+            - 'mcp'
+            - 'model-context-protocol'
+            - '--stdio'
+    # Tool servers that reach outside the host are the ones that matter.
+    reaching_tools:
+        CommandLine|contains:
+            - 'filesystem'
+            - 'postgres'
+            - 'mysql'
+            - 'sqlite'
+            - 'ssh'
+            - 'kubernetes'
+            - 'aws'
+            - 'azure'
+            - 'gcloud'
+            - 'shell'
+            - 'exec'
+            - 'browser'
+            - 'puppeteer'
+            - 'playwright'
+    condition: runner and mcp_indicator and reaching_tools
+falsepositives:
+    - Developer environments, constantly. This is a hunting rule for server estates.
+    - CI runners that legitimately use MCP tooling in a pipeline.
+level: informational
+---
+title: Large Multi-File Toolkit Unpacked Into User-Writable Path
+id: 1f5a0e2c-6b3d-4a9e-9c71-3b2d8f4e7a10
+status: experimental
+description: |
+  The Taiwan toolkit was 1,395 files in a 160 MB archive. Mass extraction of a large archive
+  into a user-writable location, followed shortly by interpreter execution from that same
+  path, is a generic staging pattern that this campaign happens to exemplify.
+
+  Deliberately generic. It will catch legitimate software installs too, and it is here for
+  retrospective hunting around a suspected window rather than for standing alerting.
+references:
+    - https://securityaffairs.com/197079/apt/china-linked-hackers-use-ai-agents-in-autonomous-attack-on-taiwan.html
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-08-20
+tags:
+    - attack.execution
+    - attack.defense-evasion
+    - attack.t1027
+logsource:
+    category: process_creation
+    product: windows
+detection:
+    extraction:
+        Image|endswith:
+            - '\tar.exe'
+            - '\7z.exe'
+            - '\unzip.exe'
+        CommandLine|contains:
+            - '-x'
+            - 'e '
+            - 'x '
+    staging_path:
+        CommandLine|contains:
+            - '\AppData\Local\Temp\'
+            - '\ProgramData\'
+            - '\Users\Public\'
+    condition: extraction and staging_path
+falsepositives:
+    - Software installation, updaters, and any developer workflow. High volume by design.
+      Use this to narrow a known window, not as an alert.
+level: informational

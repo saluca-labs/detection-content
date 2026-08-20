@@ -1,0 +1,319 @@
+// =====================================================================
+// Defender XDR / Sentinel advanced hunting - GH/VPN campaign sweep
+//
+//   A. BoryptGrab-lineage infostealer  (fake GitHub repos)
+//   B. QuickFox VPN supply chain       (FDMTP, Mustang Panda lineage)
+//   C. "Free VPN for PC" GitHub repo   (Lumma Stealer)
+//
+// Author : Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+// Date   : 2026-08-10
+// Ref    : README.md
+//
+// Each query stands alone. Run Q0 first for a fast fleet-wide IOC answer, then work
+// through the behavioural queries, which keep working after the actors rotate.
+// Lookback defaults to 90d because the QuickFox installer was trojanized for about a
+// year and BoryptGrab started 2026-06-26. Widen to the retention limit for QuickFox.
+// =====================================================================
+
+
+// ---------------------------------------------------------------------
+// Q0. FAST TRIAGE - every published file hash across all three campaigns
+// ---------------------------------------------------------------------
+let campaign_hashes = datatable(SHA256:string, Campaign:string, Note:string)
+[
+  "1c854a6aa415f4be964e8a4be49c06e092156bf66d71f9c79995b3e6b156e778", "A-BoryptGrab", "Arctic-Wolf-6.86.5.zip delivery archive",
+  "6db05c4473760c44fa572ffac4c5911b35caf2467a37726c21c5f87e25cb2ea8", "A-BoryptGrab", "trojanized libcurl.dll sample A",
+  "fd01262bd56510088b9ddfe58ca101abb98575f3c0259b480a31b917aa73bc56", "A-BoryptGrab", "trojanized libcurl.dll sample B",
+  "07dcc12197490bf3292619273ba8b11a960273a34265bca3b7d6d40e8c47dc82", "A-BoryptGrab", "decrypted in-memory implant",
+  "8e1ea6d9a8ccb303be9a2aad3524a529d0d99b1b24a136d8422276e942c4c4b8", "A-BoryptGrab", "nested final stealer PE",
+  "e9a56961980031a45e578472836576da874512bff50ca3d491fc72e52f7cc7c2", "A-BoryptGrab", "GrabPure_Dump.bin",
+  "52825dbf3fc28b9f7c3a24adf78d3425ac714e975769f4d70e8c718ddcbb9856", "A-BoryptGrab", "reference BoryptGrab sample, Trend Mar 2026",
+  "2b6cdafdfe427a3de1a94a8a2ca1f09fc4c8f90e4f59089fd9b35b73185ed01c", "B-QuickFox",   "FDMTP Gen1 loader",
+  "795594ad5e6f2868cc4d8ed12dabf4f3999a1477c6b250527c5ede9a98528fb9", "B-QuickFox",   "FDMTP Gen2 loader, JieJie obfuscated",
+  "acbaa6041286f9e3c815cd1712771a490530f52c90ce64da20f28cfa0955a5ca", "C-LummaVPN",   "Launch.exe dropper",
+  "15b644b42edce646e8ba69a677edcb09ec752e6e7920fd982979c714aece3925", "C-LummaVPN",   "msvcp110.dll payload"
+];
+union
+  (DeviceFileEvents   | where Timestamp > ago(90d) | project Timestamp, DeviceName, SHA256, Path=FolderPath, FileName, Actor=InitiatingProcessFileName, Table="FileEvents"),
+  (DeviceProcessEvents| where Timestamp > ago(90d) | project Timestamp, DeviceName, SHA256, Path=FolderPath, FileName, Actor=InitiatingProcessFileName, Table="ProcessEvents"),
+  (DeviceImageLoadEvents | where Timestamp > ago(90d) | project Timestamp, DeviceName, SHA256, Path=FolderPath, FileName, Actor=InitiatingProcessFileName, Table="ImageLoad")
+| where isnotempty(SHA256)
+| join kind=inner campaign_hashes on SHA256
+| project Timestamp, Campaign, Note, DeviceName, FileName, Path, Actor, Table, SHA256
+| order by Timestamp desc
+
+
+// ---------------------------------------------------------------------
+// Q1. FAST TRIAGE - every campaign domain and IP
+// ---------------------------------------------------------------------
+let bad_domains = dynamic([
+  // A - distribution / TDS
+  "targetroyena.com","furiesniffer.com","fleecykobird.com","balafohoaxee.com",
+  "yontzarpzenu.com","eggcupmadras.com","lafferdingar.com","palchknosp.com",
+  "brakerhotdog.com","sellietuskar.com","logic-prox.com","hamletlunoid.com",
+  "parnelmentha.com","refonttaught.com","bentleyvazquezpvey.github.io",
+  // B - QuickFox loader host and FDMTP staging
+  "cdns3.51quickfox.cn","icloud-cdn.net","google-apis.net","yahoo-cdn.it.com",
+  "wangmeng.xyz","wangmengsb.com","wangmeng66.top","techcheck1.com",
+  // C - Lumma
+  "explorationmsn.store","snailyeductyi.sbs","ferrycheatyk.sbs","deepymouthi.sbs",
+  "wrigglesight.sbs","captaitwik.sbs","sidercotay.sbs","heroicmint.sbs","monstourtu.sbs"
+]);
+let bad_ips = dynamic([
+  // A - C2 and bulletproof distribution
+  "193.143.1.131","45.93.20.61","2.27.5.63","77.91.96.188","185.100.157.222",
+  "193.221.201.165","217.145.226.0","217.145.227.254",
+  // B - FDMTP cluster nodes
+  "47.238.64.56","47.239.93.49","47.239.4.179","47.88.21.252","47.238.240.219",
+  "154.223.75.206","154.223.58.64","45.158.180.250","154.223.58.142","38.60.142.56"
+]);
+DeviceNetworkEvents
+| where Timestamp > ago(90d)
+| where RemoteIP in (bad_ips)
+   or RemoteUrl has_any (bad_domains)
+   // Proton66 /24 held a prior BoryptGrab C2 at .104 - treat the whole block as hostile
+   or ipv4_is_in_range(RemoteIP, "193.143.1.0/24")
+| project Timestamp, DeviceName, ActionType, RemoteIP, RemotePort, RemoteUrl,
+          InitiatingProcessFileName, InitiatingProcessFolderPath, InitiatingProcessCommandLine,
+          InitiatingProcessAccountName
+| order by Timestamp desc
+
+
+// ---------------------------------------------------------------------
+// Q2. [A] libcurl.dll sideloaded out of a user-writable path
+//     The core BoryptGrab execution primitive.
+// ---------------------------------------------------------------------
+DeviceImageLoadEvents
+| where Timestamp > ago(90d)
+| where FileName =~ "libcurl.dll"
+| where FolderPath has_any (@"\Downloads\", @"\Desktop\", @"\AppData\Local\Temp\",
+                            @"\AppData\Roaming\", @"\Users\Public\", @"\Windows\Temp\")
+| extend LoaderIsRenamedGup = InitiatingProcessVersionInfoOriginalFileName =~ "gup.exe"
+                              and InitiatingProcessFileName !~ "gup.exe"
+| project Timestamp, DeviceName, FolderPath, SHA256,
+          InitiatingProcessFileName, InitiatingProcessFolderPath,
+          InitiatingProcessVersionInfoOriginalFileName,
+          InitiatingProcessVersionInfoCompanyName, LoaderIsRenamedGup
+// LoaderIsRenamedGup == true is the campaign signature. Everything else is triage.
+| order by LoaderIsRenamedGup desc, Timestamp desc
+
+
+// ---------------------------------------------------------------------
+// Q3. [A] Signed WinGUP updater renamed to a vendor brand
+//     Catches the lure even if the DLL never loads.
+// ---------------------------------------------------------------------
+DeviceProcessEvents
+| where Timestamp > ago(90d)
+| where InitiatingProcessVersionInfoOriginalFileName =~ "gup.exe"
+     or ProcessVersionInfoOriginalFileName =~ "gup.exe"
+| where FileName !~ "gup.exe"
+| project Timestamp, DeviceName, FileName, FolderPath, ProcessCommandLine,
+          ProcessVersionInfoOriginalFileName, ProcessVersionInfoCompanyName,
+          InitiatingProcessFileName, AccountName
+| order by Timestamp desc
+
+
+// ---------------------------------------------------------------------
+// Q4. [A] Stealer output artifacts on disk
+//     Post-exfil. A hit here means the data is already gone.
+// ---------------------------------------------------------------------
+DeviceFileEvents
+| where Timestamp > ago(90d)
+| where FolderPath has @"\Filegraber"          // operator misspelling, highest fidelity
+     or FolderPath has @"\decrypt_browser"
+     or FileName in~ ("browser_decryption.log","UserInformation.txt","credentials_data.txt",
+                      "Discord_tokens.txt","steam_accounts.txt","installed_applications.txt","sends.log")
+     or FolderPath matches regex @"\\XX_[^\\]+_[^\\]+_[^\\]+"   // %TEMP%\XX_<geo>_<time>_GUID_
+| summarize ArtifactCount=dcount(FileName), Artifacts=make_set(FileName, 25),
+            FirstSeen=min(Timestamp), LastSeen=max(Timestamp),
+            Writers=make_set(InitiatingProcessFileName, 10)
+        by DeviceName, StagingDir=FolderPath
+| order by ArtifactCount desc
+
+
+// ---------------------------------------------------------------------
+// Q5. [A] Chrome App-Bound Encryption bypass
+//     Non-browser parent spawns a browser, then injects a ~134KB DLL.
+//     The allocation size 0x21600 = 136704 is distinctive.
+// ---------------------------------------------------------------------
+let browsers = dynamic(["chrome.exe","msedge.exe","brave.exe","opera.exe","vivaldi.exe","yandex.exe"]);
+DeviceProcessEvents
+| where Timestamp > ago(90d)
+| where FileName in~ (browsers)
+| where InitiatingProcessFileName !in~ (browsers)
+| where InitiatingProcessFileName !in~ ("explorer.exe","cmd.exe","powershell.exe","svchost.exe",
+                                        "userinit.exe","StartMenuExperienceHost.exe","SearchApp.exe")
+// The bypass launches the browser from an unusual location with no user-driven URL argument
+| where InitiatingProcessFolderPath has_any (@"\Downloads\", @"\Desktop\", @"\AppData\",
+                                             @"\Users\Public\", @"\Windows\Temp\")
+| project Timestamp, DeviceName, FileName, ProcessCommandLine,
+          InitiatingProcessFileName, InitiatingProcessFolderPath,
+          InitiatingProcessSHA256, AccountName
+| order by Timestamp desc
+
+
+// ---------------------------------------------------------------------
+// Q6. [A] Steam client memory scraped for session tokens
+//     Nothing legitimate reads steamwebhelper.exe or steamservice.exe memory.
+// ---------------------------------------------------------------------
+DeviceEvents
+| where Timestamp > ago(90d)
+| where ActionType == "OpenProcessApiCall"
+| where FileName in~ ("steamwebhelper.exe","steamservice.exe")
+| where InitiatingProcessFileName !in~ ("steam.exe","steamwebhelper.exe","steamservice.exe","MsMpEng.exe")
+| project Timestamp, DeviceName, TargetProcess=FileName,
+          InitiatingProcessFileName, InitiatingProcessFolderPath,
+          InitiatingProcessSHA256, AdditionalFields
+| order by Timestamp desc
+
+
+// ---------------------------------------------------------------------
+// Q7. [B] FDMTP sideload pair: csmonitor.exe + Microsoft.ServiceHosting.Tools.dll
+//     Note the wide lookback - this installer was trojanized for about a year.
+// ---------------------------------------------------------------------
+DeviceImageLoadEvents
+| where Timestamp > ago(180d)
+| where FileName =~ "Microsoft.ServiceHosting.Tools.dll"
+     or (InitiatingProcessFileName =~ "csmonitor.exe"
+         and InitiatingProcessFolderPath has_any (@"\Temp\", @"\AppData\", @"\quickfox\"))
+| project Timestamp, DeviceName, FileName, FolderPath, SHA256,
+          InitiatingProcessFileName, InitiatingProcessFolderPath, InitiatingProcessSHA256
+| order by Timestamp desc
+
+
+// ---------------------------------------------------------------------
+// Q8. [B] FDMTP on-disk artifacts and QuickFox install inventory
+// ---------------------------------------------------------------------
+union
+  ( DeviceFileEvents
+    | where Timestamp > ago(180d)
+    | where FolderPath has @"\quickfox\updated\"
+         or FolderPath endswith @"\quickfox\data.dat"      // 1-byte re-infection mutex
+         or FileName =~ "update.bin"
+         or FileName in~ ("csmonitor.exe","Microsoft.ServiceHosting.Tools.dll")
+    | project Timestamp, DeviceName, Evidence=strcat(FolderPath, " (", FileName, ")"),
+              Actor=InitiatingProcessFileName, Kind="FDMTP artifact" ),
+  ( DeviceProcessEvents
+    | where Timestamp > ago(180d)
+    | where ProcessCommandLine has "quickfox" or FolderPath has @"\quickfox"
+    | project Timestamp, DeviceName, Evidence=strcat(FolderPath, " :: ", ProcessCommandLine),
+              Actor=InitiatingProcessFileName, Kind="QuickFox execution" )
+| order by Timestamp desc
+
+// Inventory check - which endpoints carry a QuickFox build in the trojanized range
+// (>= 3.0.51.0 and < 3.59.6). Requires Defender Vulnerability Management.
+DeviceTvmSoftwareInventory
+| where SoftwareName has "quickfox" or SoftwareVendor has "quickfox"
+| extend InTrojanizedRange = parse_version(SoftwareVersion) >= parse_version("3.0.51.0")
+                         and parse_version(SoftwareVersion) <  parse_version("3.59.6")
+| project DeviceName, SoftwareVendor, SoftwareName, SoftwareVersion, InTrojanizedRange
+| order by InTrojanizedRange desc
+
+
+// ---------------------------------------------------------------------
+// Q9. [B] FDMTP registry persistence under the IME key
+//     Legitimate IME subkeys are short vendor names, never a hardware ID.
+// ---------------------------------------------------------------------
+DeviceRegistryEvents
+| where Timestamp > ago(180d)
+| where RegistryKey has @"\SOFTWARE\Microsoft\IME\"
+| where not(RegistryKey has_any (@"\IME\IMEJP", @"\IME\IMEKR", @"\IME\IMETC",
+                                 @"\IME\IMESC", @"\IME\IMEPY", @"\IME\IMEWB", @"\IME\Cache"))
+| where InitiatingProcessFileName !in~ ("ctfmon.exe","svchost.exe","imewdbld.exe","explorer.exe")
+| project Timestamp, DeviceName, ActionType, RegistryKey, RegistryValueName, RegistryValueData,
+          InitiatingProcessFileName, InitiatingProcessFolderPath
+| order by Timestamp desc
+
+
+// ---------------------------------------------------------------------
+// Q10. [B] FDMTP cluster registration and node traffic
+//      protocol=DotNet-TcpFDMTP is unique to the family and survives domain rotation.
+//      Port range 20800-20816 is the fallback signal.
+// ---------------------------------------------------------------------
+DeviceNetworkEvents
+| where Timestamp > ago(180d)
+| where RemoteUrl has "DotNet-TcpFDMTP"
+     or RemoteUrl has_any ("/GetCluster","/GetSlaver","/GetGateways","/GetEndpoints",
+                           "/GetServers","/GetHosts","/GetNodes")
+     or (RemotePort between (20800 .. 20816) and not(ipv4_is_private(RemoteIP)))
+| project Timestamp, DeviceName, RemoteIP, RemotePort, RemoteUrl,
+          InitiatingProcessFileName, InitiatingProcessFolderPath, InitiatingProcessCommandLine
+| order by Timestamp desc
+
+
+// ---------------------------------------------------------------------
+// Q11. [C] Lumma dropper staging in the AppData Roaming root
+// ---------------------------------------------------------------------
+DeviceFileEvents
+| where Timestamp > ago(90d)
+| where FileName endswith ".dqq"
+     or (FileName =~ "msvcp110.dll"
+         and FolderPath matches regex @"(?i)\\AppData\\Roaming\\[^\\]+$")
+| project Timestamp, DeviceName, ActionType, FileName, FolderPath, SHA256,
+          InitiatingProcessFileName, InitiatingProcessFolderPath, InitiatingProcessSHA256
+| order by Timestamp desc
+
+
+// ---------------------------------------------------------------------
+// Q12. [C] MSBuild / aspnet_regiis hollowing with no build arguments
+//      Broader than this campaign - these two are reused across commodity stealers.
+// ---------------------------------------------------------------------
+DeviceProcessEvents
+| where Timestamp > ago(90d)
+| where FileName in~ ("MSBuild.exe","aspnet_regiis.exe")
+| extend ArgTail = trim(@"\s+", tostring(replace_string(tolower(ProcessCommandLine), tolower(FileName), "")))
+| extend ArgTail = trim(@"[""'\s]+", ArgTail)
+| where isempty(ArgTail)                                  // a real build always carries a project path
+     or InitiatingProcessFolderPath has_any (@"\AppData\Roaming\", @"\AppData\Local\Temp\",
+                                             @"\Downloads\", @"\Desktop\", @"\Users\Public\")
+| project Timestamp, DeviceName, FileName, ProcessCommandLine, ArgTail,
+          InitiatingProcessFileName, InitiatingProcessFolderPath, AccountName
+| order by Timestamp desc
+
+
+// ---------------------------------------------------------------------
+// Q13. CROSS-CAMPAIGN HUNT - archives downloaded from a github.io redirect
+//      that are not actually hosted by GitHub.
+//      This is the shape of the BoryptGrab lure independent of any named domain,
+//      so it keeps working after the current ~78 redirector accounts are burned.
+// ---------------------------------------------------------------------
+let github_real = dynamic(["github.com","githubusercontent.com","githubassets.com","github.io"]);
+DeviceFileEvents
+| where Timestamp > ago(90d)
+| where ActionType == "FileCreated"
+| where FileName endswith ".zip" or FileName endswith ".7z" or FileName endswith ".exe"
+| where isnotempty(FileOriginUrl)
+| extend OriginHost = tostring(parse_url(FileOriginUrl).Host)
+| extend RefererHost = tostring(parse_url(FileOriginReferrerUrl).Host)
+| where RefererHost endswith "github.io" and not(OriginHost has_any (github_real))
+| project Timestamp, DeviceName, FileName, FolderPath, FileSize, SHA256,
+          OriginHost, RefererHost, FileOriginUrl, InitiatingProcessFileName
+| order by Timestamp desc
+
+
+// ---------------------------------------------------------------------
+// Q14. CROSS-CAMPAIGN HUNT - large padded archive containing a sideload pair
+//      BoryptGrab pads its ZIP to ~136MB to defeat sandbox and scanner size limits.
+//      Look for a big archive from the internet followed by a DLL load from the
+//      same directory within a few minutes.
+// ---------------------------------------------------------------------
+let big_archives =
+    DeviceFileEvents
+    | where Timestamp > ago(90d)
+    | where FileName endswith ".zip" and FileSize > 80000000    // 80MB+
+    | where isnotempty(FileOriginUrl)
+    | project ArchiveTime=Timestamp, DeviceName, ArchiveName=FileName,
+              ArchiveDir=FolderPath, ArchiveUrl=FileOriginUrl;
+let sideloads =
+    DeviceImageLoadEvents
+    | where Timestamp > ago(90d)
+    | where FolderPath has_any (@"\Downloads\", @"\Desktop\", @"\Temp\")
+    | where InitiatingProcessVersionInfoCompanyName != "Microsoft Corporation"
+    | project LoadTime=Timestamp, DeviceName, LoadedDll=FileName, LoadedPath=FolderPath,
+              Loader=InitiatingProcessFileName, LoaderOriginalName=InitiatingProcessVersionInfoOriginalFileName;
+big_archives
+| join kind=inner sideloads on DeviceName
+| where LoadTime between (ArchiveTime .. ArchiveTime + 30m)
+| project ArchiveTime, LoadTime, DeviceName, ArchiveName, ArchiveUrl,
+          LoadedDll, LoadedPath, Loader, LoaderOriginalName
+| order by ArchiveTime desc

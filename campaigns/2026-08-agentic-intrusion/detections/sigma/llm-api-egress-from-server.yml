@@ -1,0 +1,122 @@
+# Sigma - LLM inference API reached from a host that has no business reaching one.
+#
+# The July 2026 Taiwan campaign ran up to eight LLM agents against 21 government systems.
+# Wherever those agents executed, that host talked to an inference endpoint on every single
+# planning step. That is the loudest artefact the technique produces, and unlike hashes or
+# C2 domains it is a structural consequence of the method rather than an operator choice.
+#
+# HIGH VALUE, LOW COST. A domain controller, jump host, database server, appliance or
+# service account context has no legitimate reason to call a public model provider. Allowlist
+# the handful of workloads that genuinely do, then alert on everything else.
+#
+# DEFEATED BY SELF-HOSTED INFERENCE. An operator running an open-weight model on their own
+# box produces no third-party API traffic at all. Pair this with the tempo rules, which do
+# not care where inference happens.
+#
+# Ref: https://securityaffairs.com/197079/apt/china-linked-hackers-use-ai-agents-in-autonomous-attack-on-taiwan.html
+# Author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team, 2026-08-20
+
+title: LLM Inference API Contacted From Server Or Service Context
+id: 52775f94-76dd-4383-9d19-294364a685f5
+status: experimental
+description: |
+  A process on a server, domain controller, or other non-workstation host resolved or
+  connected to a public LLM inference endpoint. Agentic intrusion tooling calls an inference
+  API on every planning step, so this fires wherever the agent is executing.
+
+  This is an ALERT on server-class hosts and a HUNT everywhere else. Developer workstations
+  legitimately generate this traffic constantly.
+references:
+    - https://securityaffairs.com/197079/apt/china-linked-hackers-use-ai-agents-in-autonomous-attack-on-taiwan.html
+    - https://www.theregister.com/security/2026/08/12/near-autonomous-ai-agents-attack-taiwans-nuclear-safety-agency/5287055
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-08-20
+tags:
+    - attack.command-and-control
+    - attack.t1071.001
+    - attack.execution
+    - atlas.aml-t0051
+logsource:
+    category: dns_query
+    product: windows
+detection:
+    inference_endpoints:
+        QueryName|contains:
+            - 'api.anthropic.com'
+            - 'api.openai.com'
+            - 'openrouter.ai'
+            - 'generativelanguage.googleapis.com'
+            - 'api.mistral.ai'
+            - 'api.groq.com'
+            - 'api.deepseek.com'
+            - 'api.together.xyz'
+            - 'api.x.ai'
+            - 'bedrock-runtime'
+            - 'openai.azure.com'
+    # Processes that have no business planning anything.
+    server_context:
+        Image|endswith:
+            - '\lsass.exe'
+            - '\services.exe'
+            - '\svchost.exe'
+            - '\w3wp.exe'
+            - '\sqlservr.exe'
+            - '\httpd.exe'
+            - '\nginx.exe'
+            - '\java.exe'
+            - '\dns.exe'
+            - '\spoolsv.exe'
+    condition: inference_endpoints and server_context
+falsepositives:
+    - A genuine AI workload deployed on a server. Allowlist it explicitly by image path and
+      host, and record WHY in the exception, so the next analyst does not have to guess.
+    - Security products that submit samples or telemetry to a vendor LLM. Confirm the
+      destination belongs to the vendor before excluding.
+    - Copilot or similar assistant integrations on application servers.
+level: high
+---
+# Companion: the same idea against proxy or firewall logs, which is where most estates
+# will actually have the visibility. Keyed on source zone rather than process.
+
+title: LLM Inference API Egress From Restricted Network Zone
+id: 8a9b98dd-595f-42b9-bb76-42660bce593c
+status: experimental
+description: |
+  Outbound connection to a public LLM inference endpoint originating from a network zone
+  that should not produce it: server VLANs, OT and ICS segments, management networks, or
+  any DMZ. In the Taiwan campaign the agents pivoted into a nuclear safety regulator and
+  seven energy companies, environments where this traffic is categorically abnormal.
+references:
+    - https://securityaffairs.com/197079/apt/china-linked-hackers-use-ai-agents-in-autonomous-attack-on-taiwan.html
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-08-20
+tags:
+    - attack.command-and-control
+    - attack.t1071.001
+    - attack.exfiltration
+    - attack.t1567.002
+logsource:
+    category: proxy
+detection:
+    inference_endpoints:
+        c-uri|contains:
+            - 'api.anthropic.com'
+            - 'api.openai.com'
+            - 'openrouter.ai'
+            - 'generativelanguage.googleapis.com'
+            - 'api.mistral.ai'
+            - 'api.groq.com'
+            - 'api.deepseek.com'
+    # Replace with your own restricted ranges. Left explicit rather than clever on purpose:
+    # this is the line a deploying engineer MUST edit, and it should be obvious.
+    restricted_source:
+        src_ip|cidr:
+            - '10.0.0.0/8'
+    workstation_exclusion:
+        src_ip|cidr:
+            - '10.10.0.0/16'
+    condition: inference_endpoints and restricted_source and not workstation_exclusion
+falsepositives:
+    - Every estate is different. This rule is a template and WILL fire on normal traffic
+      until the CIDR blocks are replaced with yours.
+level: medium

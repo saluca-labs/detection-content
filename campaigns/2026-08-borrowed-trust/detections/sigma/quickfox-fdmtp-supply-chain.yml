@@ -1,0 +1,379 @@
+# Sigma rule collection - QuickFox VPN supply chain -> FDMTP implant
+#
+# The vendor's own Windows installer was trojanized from v3.0.51.0 through v3.59.5, roughly
+# 2025-07-25 to disclosure. Fixed in 3.59.6. FDMTP is associated with Mustang Panda.
+#
+# Chain: injected JS in the Electron renderer index.html -> loader from cdns3.51quickfox.cn ->
+#        victim validation (26-app allowlist, steam.exe kill switch) -> csmonitor.exe sideloads
+#        Microsoft.ServiceHosting.Tools.dll -> AES-decrypt update.bin -> FDMTP Client.dll.
+#
+# Ref: https://www.fortinet.com/blog/threat-research/quickfox-supply-chain-attack-used-to-deploy-fdmtp-implant
+# Author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team, 2026-08-10
+
+title: FDMTP Sideload Pair csmonitor.exe Loading Microsoft.ServiceHosting.Tools.dll
+id: 6aee2194-1b4e-472a-83d3-0cb4acae87c4
+status: experimental
+description: |
+  FDMTP sideloads through csmonitor.exe, the legitimate Windows Azure Compute and Storage
+  Emulator binary, dropped into %LOCALAPPDATA%\Temp\quickfox\updated\. The Azure emulator has
+  no business running from a temp directory on an endpoint, and pairing it with
+  Microsoft.ServiceHosting.Tools.dll outside its install root is the sideload itself.
+references:
+    - https://www.fortinet.com/blog/threat-research/quickfox-supply-chain-attack-used-to-deploy-fdmtp-implant
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-08-10
+tags:
+    - attack.defense-evasion
+    - attack.persistence
+    - attack.t1574.002
+logsource:
+    category: image_load
+    product: windows
+detection:
+    sideload_dll:
+        Image|endswith: '\csmonitor.exe'
+        ImageLoaded|endswith: '\Microsoft.ServiceHosting.Tools.dll'
+    temp_path:
+        ImageLoaded|contains:
+            - '\AppData\Local\Temp\'
+            - '\AppData\Roaming\'
+            - '\Windows\Temp\'
+            - '\quickfox\'
+    condition: sideload_dll or (sideload_dll and temp_path)
+falsepositives:
+    - Genuine Azure SDK emulator installs. Those load from Program Files, not from a temp path.
+level: critical
+
+---
+
+title: csmonitor.exe Executing From A Temp Or Roaming Path
+id: 6e86237c-c7d7-4ce4-90fe-6d210e7c2999
+status: experimental
+description: |
+  Catches the FDMTP loader host even when image-load telemetry is unavailable. The Azure
+  emulator binary running out of a user-writable path is anomalous on any endpoint.
+references:
+    - https://www.fortinet.com/blog/threat-research/quickfox-supply-chain-attack-used-to-deploy-fdmtp-implant
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-08-10
+tags:
+    - attack.defense-evasion
+    - attack.t1574.002
+    - attack.t1036.005
+logsource:
+    category: process_creation
+    product: windows
+detection:
+    selection:
+        Image|endswith: '\csmonitor.exe'
+    user_writable:
+        Image|contains:
+            - '\AppData\Local\Temp\'
+            - '\AppData\Roaming\'
+            - '\Windows\Temp\'
+            - '\Users\Public\'
+            - '\Downloads\'
+    condition: selection and user_writable
+falsepositives:
+    - None expected on an endpoint. On an Azure developer workstation, confirm the path.
+level: high
+
+---
+
+title: FDMTP Implant Artifacts Written Under quickfox Temp Tree
+id: f58d2961-c574-40b7-99b8-c2b3958438b2
+status: experimental
+description: |
+  Detects the FDMTP staging directory, the AES-encrypted payload container update.bin, and
+  the one-byte file-based mutex data.dat that the implant uses to prevent re-infection.
+references:
+    - https://www.fortinet.com/blog/threat-research/quickfox-supply-chain-attack-used-to-deploy-fdmtp-implant
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-08-10
+tags:
+    - attack.execution
+    - attack.defense-evasion
+    - attack.t1027
+logsource:
+    category: file_event
+    product: windows
+detection:
+    mutex_file:
+        TargetFilename|endswith: '\quickfox\data.dat'
+    staging_dir:
+        TargetFilename|contains: '\quickfox\updated\'
+    payload_container:
+        TargetFilename|endswith: '\update.bin'
+    quickfox_scope:
+        TargetFilename|contains: '\quickfox\'
+    condition: mutex_file or staging_dir or (payload_container and quickfox_scope)
+falsepositives:
+    - A legitimate QuickFox install writes under this tree, but not data.dat or an updated\ subdirectory containing csmonitor.exe.
+level: critical
+
+---
+
+title: FDMTP Registry Persistence Under HKCU IME Key
+id: 6730b546-546a-47d4-b69d-065a44192a3e
+status: experimental
+description: |
+  FDMTP persists configuration in HKCU\SOFTWARE\Microsoft\IME\{HWID}, hiding among the input
+  method editor keys. Legitimate IME subkeys are short vendor names such as IMEJP or IMETC,
+  never a hardware ID. Tune the exclusion list against a known-good gold image before enabling.
+references:
+    - https://www.fortinet.com/blog/threat-research/quickfox-supply-chain-attack-used-to-deploy-fdmtp-implant
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-08-10
+tags:
+    - attack.persistence
+    - attack.defense-evasion
+    - attack.t1112
+    - attack.t1547
+logsource:
+    category: registry_set
+    product: windows
+detection:
+    ime_key:
+        TargetObject|contains: '\SOFTWARE\Microsoft\IME\'
+    known_ime_subkeys:
+        TargetObject|contains:
+            - '\IME\IMEJP'
+            - '\IME\IMEKR'
+            - '\IME\IMETC'
+            - '\IME\IMESC'
+            - '\IME\IMEPY'
+            - '\IME\IMEWB'
+            - '\IME\Cache'
+    ime_owner_processes:
+        Image|endswith:
+            - '\ctfmon.exe'
+            - '\svchost.exe'
+            - '\imewdbld.exe'
+            - '\explorer.exe'
+    condition: ime_key and not known_ime_subkeys and not ime_owner_processes
+falsepositives:
+    - Third-party input method editors. Baseline your fleet, then allowlist by Image.
+level: high
+
+---
+
+title: FDMTP Cluster Registration Request
+id: 803ec4d4-26f4-4385-abfd-c870ebee2e6c
+status: experimental
+description: |
+  Before connecting, FDMTP registers with a staging domain to obtain its live C2 node list.
+  The request carries a fixed protocol identifier, DotNet-TcpFDMTP, which is unique to this
+  implant family and survives both domain and endpoint-name rotation. The endpoint name
+  itself rotates across GetCluster, GetSlaver, GetGateways, GetEndpoints, GetServers,
+  GetHosts, and GetNodes, so key on the protocol parameter rather than the path.
+references:
+    - https://www.fortinet.com/blog/threat-research/quickfox-supply-chain-attack-used-to-deploy-fdmtp-implant
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-08-10
+tags:
+    - attack.command-and-control
+    - attack.t1071.001
+    - attack.t1102
+logsource:
+    category: proxy
+detection:
+    protocol_param:
+        cs-uri-query|contains: 'protocol=DotNet-TcpFDMTP'
+    endpoint_names:
+        cs-uri-stem|endswith:
+            - '/GetCluster'
+            - '/GetSlaver'
+            - '/GetGateways'
+            - '/GetEndpoints'
+            - '/GetServers'
+            - '/GetHosts'
+            - '/GetNodes'
+    staging_domains:
+        cs-host|contains:
+            - 'icloud-cdn.net'
+            - 'google-apis.net'
+            - 'yahoo-cdn.it.com'
+            - 'wangmeng.xyz'
+            - 'wangmengsb.com'
+            - 'wangmeng66.top'
+            - 'techcheck1.com'
+    condition: protocol_param or staging_domains or (endpoint_names and not staging_domains and protocol_param)
+falsepositives:
+    - None expected. DotNet-TcpFDMTP is not a legitimate protocol identifier.
+level: critical
+
+---
+
+title: QuickFox Trojanized Update Infrastructure Contacted
+id: 0ad7e925-7120-4413-ae8f-46b8b265dcfb
+status: stable
+description: |
+  cdns3.51quickfox.cn typosquats the vendor's real domain 51quickfox.com by swapping the TLD.
+  It served the malicious loader as firebase-app-compat.js alongside a decoy analytics file,
+  plus the update.zip payload. Any resolution of this host means a trojanized client build
+  reached out.
+references:
+    - https://www.fortinet.com/blog/threat-research/quickfox-supply-chain-attack-used-to-deploy-fdmtp-implant
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-08-10
+tags:
+    - attack.command-and-control
+    - attack.initial-access
+    - attack.t1071.001
+    - attack.t1195.002
+logsource:
+    category: dns_query
+    product: windows
+detection:
+    loader_host:
+        QueryName|contains: 'cdns3.51quickfox.cn'
+    fdmtp_staging:
+        QueryName|contains:
+            - 'icloud-cdn.net'
+            - 'google-apis.net'
+            - 'yahoo-cdn.it.com'
+            - 'wangmeng.xyz'
+            - 'wangmengsb.com'
+            - 'wangmeng66.top'
+            - 'techcheck1.com'
+    condition: 1 of them
+falsepositives:
+    - Threat-intel tooling resolving IOCs deliberately.
+level: critical
+
+---
+
+title: Outbound Connection To FDMTP Cluster Node Or Port Range
+id: 08f0acd0-c7f1-4dc2-a44a-134ec65d4fe5
+status: experimental
+description: |
+  FDMTP nodes listen on a tight port range, 20800 to 20816, across a known set of Alibaba
+  Cloud and bulletproof addresses. The port range alone is a useful low-noise hunt because
+  almost nothing legitimate on a corporate endpoint speaks outbound on those ports.
+references:
+    - https://www.fortinet.com/blog/threat-research/quickfox-supply-chain-attack-used-to-deploy-fdmtp-implant
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-08-10
+tags:
+    - attack.command-and-control
+    - attack.t1571
+logsource:
+    category: network_connection
+    product: windows
+detection:
+    cluster_ips:
+        DestinationIp:
+            - '47.238.64.56'
+            - '47.239.93.49'
+            - '47.239.4.179'
+            - '47.88.21.252'
+            - '47.238.240.219'
+            - '154.223.75.206'
+            - '154.223.58.64'
+            - '45.158.180.250'
+            - '154.223.58.142'
+            - '38.60.142.56'
+    cluster_ports:
+        DestinationPort:
+            - 20800
+            - 20801
+            - 20802
+            - 20803
+            - 20804
+            - 20805
+            - 20806
+            - 20807
+            - 20808
+            - 20809
+            - 20810
+            - 20811
+            - 20812
+            - 20813
+            - 20814
+            - 20815
+            - 20816
+    initiated:
+        Initiated: 'true'
+    condition: initiated and (cluster_ips or cluster_ports)
+falsepositives:
+    - The port-range branch can hit custom internal services. Restrict to non-RFC1918 destinations if noisy.
+level: high
+
+---
+
+title: QuickFox Electron Renderer Fetching Remote Script
+id: 39c151c4-888f-4431-8541-c7499e631519
+status: experimental
+description: |
+  Two JavaScript lines were injected into the Electron renderer at
+  resources\app.asar\candy\core\service\index.html to pull and execute a remote loader.
+  Detects modification of that file, which should only ever change during a legitimate
+  vendor upgrade.
+references:
+    - https://www.fortinet.com/blog/threat-research/quickfox-supply-chain-attack-used-to-deploy-fdmtp-implant
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-08-10
+tags:
+    - attack.initial-access
+    - attack.persistence
+    - attack.t1195.002
+logsource:
+    category: file_event
+    product: windows
+detection:
+    renderer:
+        TargetFilename|contains: '\candy\core\service\'
+        TargetFilename|endswith: '\index.html'
+    asar_tree:
+        TargetFilename|contains: '\app.asar'
+    condition: renderer or (asar_tree and renderer)
+falsepositives:
+    - Legitimate QuickFox upgrades rewrite this file. Correlate with the installer version and with any subsequent request to cdns3.51quickfox.cn.
+level: medium
+
+---
+
+title: FDMTP Victim Validation Application Survey
+id: 5f5361da-d715-4477-b967-09569c15e679
+status: experimental
+description: |
+  Hunt rule, not an alert. The JS loader only deploys FDMTP when at least one of 26 target
+  applications is running, and aborts outright if steam.exe is present, to dodge consumer
+  gaming machines. The list is the clearest statement of intent in the campaign: SSH and
+  terminal clients, database tools, IDEs, crypto wallets, and Chinese-market translation
+  software. Use this to identify which of your endpoints would have been selected had the
+  trojanized client landed, and prioritise those for deeper forensics.
+references:
+    - https://www.fortinet.com/blog/threat-research/quickfox-supply-chain-attack-used-to-deploy-fdmtp-implant
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-08-10
+tags:
+    - attack.discovery
+    - attack.t1057
+logsource:
+    category: process_creation
+    product: windows
+detection:
+    target_apps:
+        Image|endswith:
+            - '\xshell.exe'
+            - '\finalshell.exe'
+            - '\MobaXterm.exe'
+            - '\Tabby.exe'
+            - '\navicat.exe'
+            - '\dbeaver.exe'
+            - '\git.exe'
+            - '\idea64.exe'
+            - '\sublime_text.exe'
+            - '\notepad++.exe'
+            - '\Code.exe'
+            - '\Exodus.exe'
+            - '\Binance.exe'
+            - '\telegram.exe'
+            - '\SafeW.exe'
+            - '\Hello-GPT.exe'
+            - '\posend.exe'
+    condition: target_apps
+falsepositives:
+    - This fires constantly in any development environment by design. Run it as a scoping query, never as an alert.
+level: informational

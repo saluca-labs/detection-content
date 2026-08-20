@@ -1,0 +1,104 @@
+campaign,type,indicator,context,source
+A-BoryptGrab,sha256,1c854a6aa415f4be964e8a4be49c06e092156bf66d71f9c79995b3e6b156e778,Delivery archive Arctic-Wolf-6.86.5.zip (~136 MB padded),Arctic Wolf
+A-BoryptGrab,sha256,6db05c4473760c44fa572ffac4c5911b35caf2467a37726c21c5f87e25cb2ea8,Trojanized libcurl.dll loader sample A (PE64 compiled 2026-06-29),Arctic Wolf
+A-BoryptGrab,sha256,fd01262bd56510088b9ddfe58ca101abb98575f3c0259b480a31b917aa73bc56,Trojanized libcurl.dll loader sample B,Arctic Wolf
+A-BoryptGrab,sha256,07dcc12197490bf3292619273ba8b11a960273a34265bca3b7d6d40e8c47dc82,Decrypted in-memory implant,Arctic Wolf
+A-BoryptGrab,sha256,8e1ea6d9a8ccb303be9a2aad3524a529d0d99b1b24a136d8422276e942c4c4b8,Nested in-memory final stealer PE,Arctic Wolf
+A-BoryptGrab,sha256,e9a56961980031a45e578472836576da874512bff50ca3d491fc72e52f7cc7c2,GrabPure_Dump.bin process-memory extraction,Arctic Wolf
+A-BoryptGrab,sha256,52825dbf3fc28b9f7c3a24adf78d3425ac714e975769f4d70e8c718ddcbb9856,Reference BoryptGrab sample (Trend Micro March 2026),Arctic Wolf
+A-BoryptGrab,sha1,E40197487A7F8D88F440EB77F73BACEF4F054DC8,BinDiff identifier for this campaign stealer,Arctic Wolf
+A-BoryptGrab,ip,193.143.1.131,Hardcoded C2 POST /upload over plaintext HTTP (Proton66 AS198953),Arctic Wolf
+A-BoryptGrab,cidr,193.143.1.0/24,Proton66 netblock; prior BoryptGrab C2 at .104,Arctic Wolf
+A-BoryptGrab,ip,45.93.20.61,Reference-sample C2 port 5466,Arctic Wolf
+A-BoryptGrab,ip,2.27.5.63,Non-Cloudflare distribution host sharing the Github Download page title,Arctic Wolf
+A-BoryptGrab,ip,77.91.96.188,Non-Cloudflare distribution host,Arctic Wolf
+A-BoryptGrab,ip,185.100.157.222,Non-Cloudflare distribution host,Arctic Wolf
+A-BoryptGrab,ip,193.221.201.165,Non-Cloudflare distribution host,Arctic Wolf
+A-BoryptGrab,ip,217.145.226.0,Non-Cloudflare distribution host,Arctic Wolf
+A-BoryptGrab,ip,217.145.227.254,Non-Cloudflare distribution host,Arctic Wolf
+A-BoryptGrab,domain,targetroyena.com,Primary distribution host serving templated gh-downloader pages,Arctic Wolf
+A-BoryptGrab,domain,furiesniffer.com,Actor-controlled distribution/TDS domain,Arctic Wolf
+A-BoryptGrab,domain,fleecykobird.com,Actor-controlled distribution/TDS domain,Arctic Wolf
+A-BoryptGrab,domain,balafohoaxee.com,Actor-controlled distribution/TDS domain,Arctic Wolf
+A-BoryptGrab,domain,yontzarpzenu.com,Actor-controlled distribution/TDS domain,Arctic Wolf
+A-BoryptGrab,domain,eggcupmadras.com,Actor-controlled distribution/TDS domain,Arctic Wolf
+A-BoryptGrab,domain,lafferdingar.com,Actor-controlled distribution/TDS domain,Arctic Wolf
+A-BoryptGrab,domain,palchknosp.com,Actor-controlled distribution/TDS domain,Arctic Wolf
+A-BoryptGrab,domain,brakerhotdog.com,Actor-controlled distribution/TDS domain,Arctic Wolf
+A-BoryptGrab,domain,sellietuskar.com,Actor-controlled distribution/TDS domain,Arctic Wolf
+A-BoryptGrab,domain,logic-prox.com,Actor-controlled distribution/TDS domain,Arctic Wolf
+A-BoryptGrab,domain,hamletlunoid.com,Actor-controlled distribution/TDS domain,Arctic Wolf
+A-BoryptGrab,domain,parnelmentha.com,Actor-controlled distribution/TDS domain,Arctic Wolf
+A-BoryptGrab,domain,refonttaught.com,Actor-controlled distribution/TDS domain,Arctic Wolf
+A-BoryptGrab,domain,bentleyvazquezpvey.github.io,Example redirector account (~78 active at time of reporting),Arctic Wolf
+A-BoryptGrab,uri,/download-archive?user_code=<code>&domain=<referrer>.github.io,Payload-generation endpoint; ZIP rotates roughly every 60 seconds,Arctic Wolf
+A-BoryptGrab,http-header,X-Filename,Custom exfil header on POST /upload,Arctic Wolf
+A-BoryptGrab,http-header,X-Size,Custom exfil header on POST /upload,Arctic Wolf
+A-BoryptGrab,string,Filegraber,File-grabber staging directory (operator misspelling),Arctic Wolf
+A-BoryptGrab,string,Operation System,Log field typo in stealer output,Arctic Wolf
+A-BoryptGrab,string,Github Download,Hardcoded delivery-page title template,Arctic Wolf
+A-BoryptGrab,string,Invalid access. Please return to the main page.,Delivery-page alert on missing user_code,Arctic Wolf
+A-BoryptGrab,path,%TEMP%\XX_<geo>_<time>_GUID_\,Stealer staging directory; no cleanup routine,Arctic Wolf
+A-BoryptGrab,filename,browser_decryption.log,Stealer output artifact,Arctic Wolf
+A-BoryptGrab,filename,UserInformation.txt,Stealer output artifact,Arctic Wolf
+A-BoryptGrab,filename,credentials_data.txt,Windows Credential Manager dump output,Arctic Wolf
+A-BoryptGrab,filename,Discord_tokens.txt,Discord token theft output,Arctic Wolf
+A-BoryptGrab,filename,steam_accounts.txt,Steam session token output,Arctic Wolf
+A-BoryptGrab,filename,installed_applications.txt,Installed software inventory output,Arctic Wolf
+A-BoryptGrab,email,refija8987amira@gmail.com,Commit author email on the fake Arctic Wolf org (UTC+1),Arctic Wolf
+A-BoryptGrab,account,Rednightmare8720,GitHub account ID 295189111 created 2026-06-19,Arctic Wolf
+A-BoryptGrab,repo,Arctic-Wolf-Security/.github,Fake org repo created 2026-06-30 17:33:41 UTC,Arctic Wolf
+B-QuickFox,sha256,2b6cdafdfe427a3de1a94a8a2ca1f09fc4c8f90e4f59089fd9b35b73185ed01c,FDMTP Gen1 .NET loader,Fortinet
+B-QuickFox,sha256,795594ad5e6f2868cc4d8ed12dabf4f3999a1477c6b250527c5ede9a98528fb9,FDMTP Gen2 loader obfuscated with JieJie .NET Protector,Fortinet
+B-QuickFox,md5,3B79D95F7F7B58C401A3BC79F94EBB52,FDMTP Gen1 loader,Fortinet
+B-QuickFox,md5,03FD832B81DD54D2BF5F610A8FF27856,FDMTP Gen2 loader,Fortinet
+B-QuickFox,domain,cdns3.51quickfox.cn,Loader host typosquatting the vendor domain by TLD swap; registered 2025-06-09,Fortinet
+B-QuickFox,domain,www.icloud-cdn.net,FDMTP cluster staging domain first observed 2025-11-17,Fortinet
+B-QuickFox,domain,www.google-apis.net,FDMTP cluster staging domain first observed 2026-01-18,Fortinet
+B-QuickFox,domain,www.yahoo-cdn.it.com,FDMTP cluster staging domain first observed 2026-02-13,Fortinet
+B-QuickFox,domain,www.wangmeng.xyz,FDMTP cluster staging domain first observed 2025-11-19,Fortinet
+B-QuickFox,domain,www.wangmengsb.com,FDMTP cluster staging domain first observed 2026-06-03,Fortinet
+B-QuickFox,domain,www.wangmeng66.top,FDMTP cluster staging domain first observed 2026-06-16,Fortinet
+B-QuickFox,domain,www.techcheck1.com,FDMTP cluster staging domain first observed 2026-06-26,Fortinet
+B-QuickFox,ip,47.238.64.56,FDMTP cluster node,Fortinet
+B-QuickFox,ip,47.239.93.49,FDMTP cluster node,Fortinet
+B-QuickFox,ip,47.239.4.179,FDMTP cluster node,Fortinet
+B-QuickFox,ip,47.88.21.252,FDMTP cluster node,Fortinet
+B-QuickFox,ip,47.238.240.219,FDMTP cluster node,Fortinet
+B-QuickFox,ip,154.223.75.206,FDMTP cluster node,Fortinet
+B-QuickFox,ip,154.223.58.64,FDMTP cluster node,Fortinet
+B-QuickFox,ip,45.158.180.250,FDMTP cluster node,Fortinet
+B-QuickFox,ip,154.223.58.142,FDMTP cluster node,Fortinet
+B-QuickFox,ip,38.60.142.56,FDMTP cluster node,Fortinet
+B-QuickFox,port-range,20800-20816,FDMTP cluster node listening range,Fortinet
+B-QuickFox,uri,/GetCluster?protocol=DotNet-TcpFDMTP&tag=<campaign>,Cluster registration; endpoint name rotates but protocol value does not,Fortinet
+B-QuickFox,string,DotNet-TcpFDMTP,Protocol identifier unique to the FDMTP family,Fortinet
+B-QuickFox,string,POt_L[Bsh0=+@0a.,AES-128-ECB key decrypting update.bin,Fortinet
+B-QuickFox,url,cdns3.51quickfox.cn/2025090411/update.zip,Payload archive,Fortinet
+B-QuickFox,url,cdns3.51quickfox.cn/script/firebase-app-compat.js,Malicious JS loader,Fortinet
+B-QuickFox,url,cdns3.51quickfox.cn/script/firebase-analytics-compat.js,Decoy file alongside the loader,Fortinet
+B-QuickFox,path,%LOCALAPPDATA%\Temp\quickfox\updated\,FDMTP sideload staging directory,Fortinet
+B-QuickFox,path,%TEMP%\quickfox\data.dat,One-byte file mutex preventing re-infection,Fortinet
+B-QuickFox,filename,csmonitor.exe,Legitimate Azure Compute and Storage Emulator binary used as sideload host,Fortinet
+B-QuickFox,filename,Microsoft.ServiceHosting.Tools.dll,Malicious sideloaded DLL,Fortinet
+B-QuickFox,filename,update.bin,AES-encrypted FDMTP payload container,Fortinet
+B-QuickFox,registry,HKCU\SOFTWARE\Microsoft\IME\{HWID},FDMTP configuration persistence,Fortinet
+B-QuickFox,version-range,3.0.51.0 to 3.59.5,Trojanized QuickFox Windows installer range; fixed in 3.59.6,Fortinet
+B-QuickFox,path,resources/app.asar/candy/core/service/index.html,Electron renderer file carrying the two injected JS lines,Fortinet
+C-LummaVPN,sha256,acbaa6041286f9e3c815cd1712771a490530f52c90ce64da20f28cfa0955a5ca,Launch.exe dropper (1.52 MB),CYFIRMA
+C-LummaVPN,md5,bbc7fc957d4fff6a55bd004a3d124dda,Launch.exe dropper,CYFIRMA
+C-LummaVPN,sha256,15b644b42edce646e8ba69a677edcb09ec752e6e7920fd982979c714aece3925,msvcp110.dll Lumma payload,CYFIRMA
+C-LummaVPN,path,%APPDATA%\msvcp110.dll,Payload staged as msvcp110.dqq then renamed,CYFIRMA
+C-LummaVPN,export,GetGameData,Export invoked from the dropped DLL,CYFIRMA
+C-LummaVPN,process,MSBuild.exe,Injection target,CYFIRMA
+C-LummaVPN,process,aspnet_regiis.exe,Injection target,CYFIRMA
+C-LummaVPN,account,SAMAIOEC,GitHub account hosting free-vpn-for-pc and minecraft-skin,CYFIRMA
+C-LummaVPN,domain,explorationmsn.store,Lumma C2,CYFIRMA
+C-LummaVPN,domain,snailyeductyi.sbs,Lumma C2,CYFIRMA
+C-LummaVPN,domain,ferrycheatyk.sbs,Lumma C2,CYFIRMA
+C-LummaVPN,domain,deepymouthi.sbs,Lumma C2,CYFIRMA
+C-LummaVPN,domain,wrigglesight.sbs,Lumma C2,CYFIRMA
+C-LummaVPN,domain,captaitwik.sbs,Lumma C2,CYFIRMA
+C-LummaVPN,domain,sidercotay.sbs,Lumma C2,CYFIRMA
+C-LummaVPN,domain,heroicmint.sbs,Lumma C2,CYFIRMA
+C-LummaVPN,domain,monstourtu.sbs,Lumma C2,CYFIRMA

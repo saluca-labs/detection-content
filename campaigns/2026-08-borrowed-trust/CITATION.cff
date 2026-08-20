@@ -1,0 +1,76 @@
+cff-version: 1.2.0
+message: "If you use this detection content, please cite it as below."
+title: "Borrowed Trust: Detection Content for Three Concurrent Signed-Binary Sideload Campaigns"
+abstract: >-
+  Deployable detection content for three concurrent August 2026 campaigns that share a single
+  execution primitive: a validly signed or otherwise trusted binary resolves a malicious
+  dependency at runtime. Covers the BoryptGrab-lineage infostealer distributed through
+  approximately 292 brand-impersonation GitHub repositories, the QuickFox VPN supply chain
+  compromise delivering the FDMTP implant, and the "Free VPN for PC" GitHub repository
+  delivering Lumma Stealer. Includes Sigma, YARA, KQL, Splunk SPL, and Suricata rules, two
+  read-only PowerShell hunt scripts, a consolidated indicator set, and an explicit ledger of
+  what this class of campaign makes structurally undetectable. Defensive material only.
+type: software
+authors:
+  - family-names: Ruvalcaba
+    given-names: Cristian
+    affiliation: "Saluca Labs"
+  - name: "Saluca Agentic AI Research Team"
+    alias: "Saluca Agentic AI Research Team"
+repository-code: "https://github.com/saluca-labs/borrowed-trust-detections"
+license: Apache-2.0
+date-released: 2026-08-10
+identifiers:
+  - type: doi
+    value: "10.5281/zenodo.21880002"
+    description: "Companion paper, published on Zenodo 2026-08-11 under CC-BY-4.0."
+preferred-citation:
+  type: report
+  title: >-
+    Borrowed Trust: A Detection Engineering Analysis of Three Concurrent Signed-Binary
+    Sideload Campaigns, August 2026
+  authors:
+    - family-names: Ruvalcaba
+      given-names: Cristian
+      affiliation: "Saluca Labs"
+    - name: "Saluca Agentic AI Research Team"
+      alias: "Saluca Agentic AI Research Team"
+  institution:
+    name: "Saluca Labs"
+  year: 2026
+  month: 8
+  doi: "10.5281/zenodo.21880002"
+  url: "https://doi.org/10.5281/zenodo.21880002"
+  license: CC-BY-4.0
+keywords:
+  - detection engineering
+  - threat detection
+  - DLL side-loading
+  - supply chain security
+  - infostealer
+  - Sigma
+  - YARA
+  - Suricata
+  - MITRE ATT&CK
+  - code signing
+references:
+  - type: article
+    title: >-
+      Malicious GitHub Campaign: Fake "Arctic Wolf" and 290+ Brand-Impersonation
+      Repositories Deliver BoryptGrab-Lineage Infostealer
+    authors:
+      - name: "Arctic Wolf"
+    url: "https://arcticwolf.com/resources/blog/fake-github-repositories-deliver-boryptgrab-lineage-infostealer/"
+    year: 2026
+  - type: article
+    title: "QuickFox Supply Chain Attack Used to Deploy FDMTP Implant"
+    authors:
+      - name: "Fortinet FortiGuard Labs"
+    url: "https://www.fortinet.com/blog/threat-research/quickfox-supply-chain-attack-used-to-deploy-fdmtp-implant"
+    year: 2026
+  - type: article
+    title: "GitHub Abused to Spread Malware Disguised as Free VPN"
+    authors:
+      - name: "CYFIRMA"
+    url: "https://www.cyfirma.com/research/github-abused-to-spread-malware-disguised-as-free-vpn/"
+    year: 2025

@@ -1,0 +1,181 @@
+// Agentic intrusion hunting for Microsoft Defender XDR and Sentinel.
+//
+// Companion to detections/splunk/agentic-tempo.spl. Same three ideas, expressed against
+// Defender's advanced hunting schema: tempo, breadth with adaptation, and the correlation
+// of inference traffic with authentication activity.
+//
+// No indicators were published for the July 2026 Taiwan campaign. Everything here is
+// behavioural. Read the repository README, particularly "What you cannot detect here",
+// before presenting any of this as coverage.
+//
+// Author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team, 2026-08-20
+// Ref: https://securityaffairs.com/197079/apt/china-linked-hackers-use-ai-agents-in-autonomous-attack-on-taiwan.html
+// License: Apache-2.0
+
+
+// ============================================================================
+// 1. Inference endpoints reached from server-class devices
+// ============================================================================
+// Highest value, lowest cost. A server calling a model provider means an agent is running
+// on it. Allowlist your genuine AI workloads, then treat the remainder as an incident.
+let InferenceHosts = dynamic([
+    "api.anthropic.com", "api.openai.com", "openrouter.ai",
+    "generativelanguage.googleapis.com", "api.mistral.ai", "api.groq.com",
+    "api.deepseek.com", "api.together.xyz", "api.x.ai"]);
+DeviceNetworkEvents
+| where Timestamp > ago(7d)
+| where RemoteUrl has_any (InferenceHosts) or RemoteIPType == "Public"
+| where RemoteUrl has_any (InferenceHosts)
+| join kind=inner (
+    DeviceInfo
+    | where Timestamp > ago(7d)
+    | summarize arg_max(Timestamp, DeviceType, OSPlatform) by DeviceId
+    // Server-class only. Workstations do this legitimately all day.
+    | where DeviceType != "Workstation"
+) on DeviceId
+| summarize
+    Calls = count(),
+    Endpoints = make_set(RemoteUrl, 10),
+    Processes = make_set(InitiatingProcessFileName, 10),
+    FirstSeen = min(Timestamp), LastSeen = max(Timestamp)
+    by DeviceName, DeviceType, InitiatingProcessAccountName
+| extend Note = "Model inference API contacted from a non-workstation device"
+| order by Calls desc
+
+
+// ============================================================================
+// 2. Tempo profile - burst, think-pause, adapt
+// ============================================================================
+// The signature that distinguishes an agent from a human or a script. See the SPL file for
+// the full reasoning. Thresholds are starting points and MUST be baselined.
+let LookBack = 24h;
+SigninLogs
+| where TimeGenerated > ago(LookBack)
+| project TimeGenerated, IPAddress, UserPrincipalName, AppDisplayName,
+          ResultType, Status = tostring(Status.errorCode)
+| extend Technique = strcat(AppDisplayName, "|", Status)
+| extend Outcome = iff(ResultType == 0, "success", "failure")
+| order by IPAddress asc, TimeGenerated asc
+| extend PrevTime = prev(TimeGenerated), PrevIP = prev(IPAddress),
+         PrevTechnique = prev(Technique), PrevOutcome = prev(Outcome)
+| where IPAddress == PrevIP
+| extend DeltaSec = datetime_diff('second', TimeGenerated, PrevTime)
+| where DeltaSec >= 0
+| extend Band = case(
+      DeltaSec < 1, "burst",
+      DeltaSec between (2 .. 30), "think",
+      DeltaSec > 60, "human",
+      "other")
+// Technique changed straight after a failure: a planner re-ranked and chose differently.
+| extend AdaptedAfterFailure = iff(PrevOutcome == "failure" and Technique != PrevTechnique, 1, 0)
+| extend PlannerPause = iff(Band == "think" and Technique != PrevTechnique, 1, 0)
+| summarize
+    Events = count(),
+    Bursts = countif(Band == "burst"),
+    Thinks = countif(Band == "think"),
+    HumanGaps = countif(Band == "human"),
+    Adaptations = sum(AdaptedAfterFailure),
+    PlannerPauses = sum(PlannerPause),
+    DistinctUsers = dcount(UserPrincipalName),
+    DistinctTechniques = dcount(Technique),
+    AvgDelta = avg(DeltaSec), StdevDelta = stdev(DeltaSec),
+    FirstSeen = min(TimeGenerated), LastSeen = max(TimeGenerated)
+    by IPAddress
+| where Events >= 20
+| extend BurstRatio = round(todouble(Bursts) / Events, 3),
+         ThinkRatio = round(todouble(Thinks) / Events, 3),
+         HumanRatio = round(todouble(HumanGaps) / Events, 3)
+| extend Score = round(
+      (BurstRatio * 25) + (ThinkRatio * 30)
+    + iff(Adaptations > 0, 20.0, 0.0)
+    + iff(PlannerPauses >= 3, 15.0, 0.0)
+    + iff(DistinctTechniques >= 3, 10.0, 0.0)
+    - (HumanRatio * 30), 1)
+| extend Verdict = case(
+      Score >= 60, "AGENT-SHAPED - investigate",
+      Score >= 40, "possible agent - review",
+      BurstRatio > 0.8 and Adaptations == 0, "likely script",
+      HumanRatio > 0.5, "likely human",
+      "unclear")
+| project IPAddress, Verdict, Score, Events, BurstRatio, ThinkRatio, HumanRatio,
+          Adaptations, PlannerPauses, DistinctUsers, DistinctTechniques,
+          AvgDelta, StdevDelta, FirstSeen, LastSeen
+| order by Score desc
+
+
+// ============================================================================
+// 3. Breadth with adaptation
+// ============================================================================
+// Broad like a scanner, adaptive like a human. Neither alone is interesting.
+SigninLogs
+| where TimeGenerated > ago(4d)
+| extend Technique = strcat(AppDisplayName, "|", tostring(Status.errorCode))
+| summarize TargetsThisHour = dcount(ResourceDisplayName),
+            TechniquesThisHour = dcount(Technique),
+            UsersThisHour = dcount(UserPrincipalName),
+            Events = count()
+    by IPAddress, bin(TimeGenerated, 1h)
+| summarize TotalEvents = sum(Events),
+            PeakTargetsHr = max(TargetsThisHour),
+            PeakTechniquesHr = max(TechniquesThisHour),
+            AvgTechniquesHr = avg(TechniquesThisHour),
+            ActiveHours = dcount(TimeGenerated)
+    by IPAddress
+| where PeakTargetsHr >= 5 and AvgTechniquesHr >= 2.0 and ActiveHours >= 3
+| extend Note = "Broad reach with sustained technique variation"
+| order by PeakTargetsHr desc
+
+
+// ============================================================================
+// 4. Agent framework and MCP tool servers on managed devices
+// ============================================================================
+// Answers "where in my estate can an LLM take actions". Hunting, not alerting: these
+// frameworks are legitimate and common. The finding is one on a host with no developer.
+DeviceProcessEvents
+| where Timestamp > ago(30d)
+| where ProcessCommandLine has_any ("hermes-agent", "openclaw", "nousresearch/hermes")
+     or FolderPath has_any (@"\AppData\Local\hermes\", @"\.hermes\", @"\.openclaw\")
+     or (FileName in~ ("uvx.exe", "uv.exe", "npx.exe", "pipx.exe")
+         and ProcessCommandLine has "mcp"
+         and ProcessCommandLine has_any ("filesystem", "postgres", "ssh", "kubernetes",
+                                         "aws", "azure", "shell", "exec", "browser"))
+| join kind=leftouter (
+    DeviceInfo | summarize arg_max(Timestamp, DeviceType) by DeviceId
+) on DeviceId
+| summarize Executions = count(),
+            CommandLines = make_set(ProcessCommandLine, 5),
+            Accounts = make_set(AccountName, 5),
+            FirstSeen = min(Timestamp), LastSeen = max(Timestamp)
+    by DeviceName, DeviceType
+| extend Priority = iff(DeviceType != "Workstation", "REVIEW - agent capability on a server", "expected on developer endpoints")
+| order by Priority asc, Executions desc
+
+
+// ============================================================================
+// 5. Correlation - inference traffic beside authentication activity
+// ============================================================================
+// The single most defensible finding available: a device calling a model provider in the
+// same minutes it generates authentication activity has an LLM in its decision loop.
+let InferenceHosts = dynamic([
+    "api.anthropic.com", "api.openai.com", "openrouter.ai",
+    "generativelanguage.googleapis.com", "api.mistral.ai", "api.groq.com", "api.deepseek.com"]);
+let InferenceMinutes =
+    DeviceNetworkEvents
+    | where Timestamp > ago(7d)
+    | where RemoteUrl has_any (InferenceHosts)
+    | summarize InferenceCalls = count() by DeviceName, Minute = bin(Timestamp, 1m);
+let AuthMinutes =
+    DeviceLogonEvents
+    | where Timestamp > ago(7d)
+    | summarize AuthEvents = count(), AuthAccounts = dcount(AccountName)
+        by DeviceName, Minute = bin(Timestamp, 1m);
+InferenceMinutes
+| join kind=inner AuthMinutes on DeviceName, Minute
+| where InferenceCalls >= 3 and AuthEvents >= 3
+| summarize TotalInference = sum(InferenceCalls), TotalAuth = sum(AuthEvents),
+            PeakAccounts = max(AuthAccounts), MinutesCorrelated = dcount(Minute),
+            FirstSeen = min(Minute), LastSeen = max(Minute)
+    by DeviceName
+| where MinutesCorrelated >= 3
+| extend Note = "Inference API traffic interleaved with logon activity on the same device"
+| order by MinutesCorrelated desc

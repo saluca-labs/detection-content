@@ -1,0 +1,128 @@
+# Sigma rule collection - "Free VPN for PC" GitHub repo -> Lumma Stealer
+#
+# GitHub user SAMAIOEC, repos free-vpn-for-pc and minecraft-skin.
+# Chain: Launch.exe (1.52MB, base64 payload hidden after 1177 chars of French filler text) ->
+#        drops %APPDATA%\msvcp110.dqq -> renames to msvcp110.dll -> LoadLibrary ->
+#        GetGameData export -> injects into MSBuild.exe and aspnet_regiis.exe -> Lumma Stealer.
+#
+# Ref: https://www.cyfirma.com/research/github-abused-to-spread-malware-disguised-as-free-vpn/
+# Author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team, 2026-08-10
+
+title: Lumma Dropper Stages msvcp110 In AppData Roaming Root
+id: 2f8ce7c6-b944-40bf-832e-4b81fead176a
+status: experimental
+description: |
+  Launch.exe writes its payload as %APPDATA%\msvcp110.dqq then renames it to msvcp110.dll to
+  masquerade as the Visual C++ runtime. A genuine msvcp110.dll lives in System32, SysWOW64, or
+  an application directory, never loose in the Roaming root. The .dqq staging extension is
+  unique enough to alert on by itself.
+references:
+    - https://www.cyfirma.com/research/github-abused-to-spread-malware-disguised-as-free-vpn/
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-08-10
+tags:
+    - attack.defense-evasion
+    - attack.execution
+    - attack.t1036.005
+    - attack.t1574.001
+logsource:
+    category: file_event
+    product: windows
+detection:
+    staging_ext:
+        TargetFilename|endswith: '.dqq'
+    masquerade_dll:
+        TargetFilename|endswith: '\msvcp110.dll'
+    roaming_root:
+        TargetFilename|contains: '\AppData\Roaming\'
+    subfolder:
+        TargetFilename|contains:
+            - '\AppData\Roaming\Microsoft\'
+            - '\AppData\Roaming\Adobe\'
+    condition: staging_ext or (masquerade_dll and roaming_root and not subfolder)
+falsepositives:
+    - Portable applications bundling their own VC++ runtime into a Roaming subfolder. The subfolder filter handles the common cases.
+level: high
+
+---
+
+title: Injection Into MSBuild.exe Or aspnet_regiis.exe From Non-Developer Parent
+id: a1afba91-0feb-477d-8f50-c6c2cd0f7c0c
+status: experimental
+description: |
+  The Lumma chain hollows two signed .NET Framework utilities, MSBuild.exe and
+  aspnet_regiis.exe, as living-off-the-land injection hosts. Neither should be spawned by a
+  binary sitting in Downloads or AppData. This rule is deliberately broader than the single
+  campaign, since these two targets are reused across many commodity stealer chains.
+references:
+    - https://www.cyfirma.com/research/github-abused-to-spread-malware-disguised-as-free-vpn/
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-08-10
+tags:
+    - attack.defense-evasion
+    - attack.execution
+    - attack.t1055.012
+    - attack.t1127.001
+logsource:
+    category: process_creation
+    product: windows
+detection:
+    lolbin_targets:
+        Image|endswith:
+            - '\MSBuild.exe'
+            - '\aspnet_regiis.exe'
+    suspicious_parent:
+        ParentImage|contains:
+            - '\AppData\Roaming\'
+            - '\AppData\Local\Temp\'
+            - '\Downloads\'
+            - '\Desktop\'
+            - '\Users\Public\'
+            - '\Windows\Temp\'
+    no_args:
+        CommandLine|endswith:
+            - 'MSBuild.exe'
+            - 'MSBuild.exe '
+            - 'aspnet_regiis.exe'
+            - 'aspnet_regiis.exe '
+    condition: lolbin_targets and (suspicious_parent or no_args)
+falsepositives:
+    - CI agents and IDEs invoking MSBuild from a temp working directory. Allowlist by ParentImage.
+    - The no_args branch is the stronger signal - a real build always carries a project path.
+level: high
+
+---
+
+title: Lumma Free VPN Campaign C2 Contacted
+id: f28a79a9-7017-4414-a85c-80a00fb073cf
+status: stable
+description: |
+  Direct IOC match on the Lumma C2 set published with the Free VPN for PC campaign. Note the
+  heavy use of the .sbs TLD, which carries very little legitimate enterprise traffic and is a
+  reasonable candidate for a blanket block independent of these specific hosts.
+references:
+    - https://www.cyfirma.com/research/github-abused-to-spread-malware-disguised-as-free-vpn/
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-08-10
+tags:
+    - attack.command-and-control
+    - attack.t1071.001
+logsource:
+    category: dns_query
+    product: windows
+detection:
+    c2_domains:
+        QueryName|contains:
+            - 'explorationmsn.store'
+            - 'snailyeductyi.sbs'
+            - 'ferrycheatyk.sbs'
+            - 'deepymouthi.sbs'
+            - 'wrigglesight.sbs'
+            - 'captaitwik.sbs'
+            - 'sidercotay.sbs'
+            - 'heroicmint.sbs'
+            - 'monstourtu.sbs'
+    condition: c2_domains
+falsepositives:
+    - Threat-intel tooling resolving IOCs deliberately.
+level: critical

@@ -1,0 +1,127 @@
+# Suricata rules - LLM inference egress from places it does not belong.
+#
+# Scope note, read this first. Suricata can see almost nothing of an agentic intrusion. The
+# planning happens inside a prompt, inside TLS, at a third-party provider. What remains
+# observable on the wire is the FACT of inference traffic and where it came from, which is
+# still useful because an inference call from an OT segment or a domain controller is
+# categorically abnormal.
+#
+# These rules therefore key on TLS SNI and HTTP Host, scoped by source network. You MUST
+# edit the variables below. Shipped as-is they will either fire on everything or nothing.
+#
+# Defeated entirely by self-hosted inference. Assume that becomes common.
+#
+# Author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team, 2026-08-20
+# Ref: https://securityaffairs.com/197079/apt/china-linked-hackers-use-ai-agents-in-autonomous-attack-on-taiwan.html
+# License: Apache-2.0
+#
+# Required variables in suricata.yaml, or override at the top of your rule file:
+#   RESTRICTED_NET  - segments that must never call an inference API
+#                     (server VLANs, OT/ICS, management, DMZ)
+#   AI_ALLOWED_NET  - hosts and workloads legitimately permitted to do so
+#
+# Suggested starting point:
+#   RESTRICTED_NET: "[10.0.0.0/8,172.16.0.0/12]"
+#   AI_ALLOWED_NET: "[10.10.0.0/16]"
+
+# --------------------------------------------------------------------------
+# TLS SNI - the main event
+# --------------------------------------------------------------------------
+
+alert tls $RESTRICTED_NET any -> $EXTERNAL_NET 443 (
+    msg:"SALUCA Agentic - LLM inference API contacted from restricted segment (Anthropic)";
+    tls.sni; content:"api.anthropic.com"; endswith;
+    flow:established,to_server;
+    threshold:type limit, track by_src, count 1, seconds 300;
+    metadata:attack_target Client, created_at 2026_08_20, confidence Medium;
+    reference:url,securityaffairs.com/197079/apt/china-linked-hackers-use-ai-agents-in-autonomous-attack-on-taiwan.html;
+    classtype:policy-violation; sid:9200001; rev:1;)
+
+alert tls $RESTRICTED_NET any -> $EXTERNAL_NET 443 (
+    msg:"SALUCA Agentic - LLM inference API contacted from restricted segment (OpenAI)";
+    tls.sni; content:"api.openai.com"; endswith;
+    flow:established,to_server;
+    threshold:type limit, track by_src, count 1, seconds 300;
+    metadata:created_at 2026_08_20, confidence Medium;
+    classtype:policy-violation; sid:9200002; rev:1;)
+
+alert tls $RESTRICTED_NET any -> $EXTERNAL_NET 443 (
+    msg:"SALUCA Agentic - LLM inference API contacted from restricted segment (OpenRouter)";
+    tls.sni; content:"openrouter.ai"; endswith;
+    flow:established,to_server;
+    threshold:type limit, track by_src, count 1, seconds 300;
+    metadata:created_at 2026_08_20, confidence Medium;
+    classtype:policy-violation; sid:9200003; rev:1;)
+
+alert tls $RESTRICTED_NET any -> $EXTERNAL_NET 443 (
+    msg:"SALUCA Agentic - LLM inference API contacted from restricted segment (Google Gemini)";
+    tls.sni; content:"generativelanguage.googleapis.com"; endswith;
+    flow:established,to_server;
+    threshold:type limit, track by_src, count 1, seconds 300;
+    metadata:created_at 2026_08_20, confidence Medium;
+    classtype:policy-violation; sid:9200004; rev:1;)
+
+alert tls $RESTRICTED_NET any -> $EXTERNAL_NET 443 (
+    msg:"SALUCA Agentic - LLM inference API contacted from restricted segment (other provider)";
+    tls.sni; pcre:"/(api\.(mistral|groq|deepseek|x)\.ai|api\.together\.xyz|\.openai\.azure\.com)$/i";
+    flow:established,to_server;
+    threshold:type limit, track by_src, count 1, seconds 300;
+    metadata:created_at 2026_08_20, confidence Medium;
+    classtype:policy-violation; sid:9200005; rev:1;)
+
+# --------------------------------------------------------------------------
+# Sustained inference from one restricted host
+# --------------------------------------------------------------------------
+# One call might be a stray integration. An agent working a target produces a call per
+# planning step, continuously. Volume is the discriminator.
+
+alert tls $RESTRICTED_NET any -> $EXTERNAL_NET 443 (
+    msg:"SALUCA Agentic - sustained LLM inference from restricted host, possible agent loop";
+    tls.sni; pcre:"/(api\.anthropic\.com|api\.openai\.com|openrouter\.ai|generativelanguage\.googleapis\.com|api\.mistral\.ai|api\.groq\.com|api\.deepseek\.com)$/i";
+    flow:established,to_server;
+    threshold:type threshold, track by_src, count 20, seconds 600;
+    metadata:created_at 2026_08_20, confidence High;
+    classtype:policy-violation; sid:9200006; rev:1;)
+
+# --------------------------------------------------------------------------
+# Plaintext fallback
+# --------------------------------------------------------------------------
+# Rare, but self-hosted and proxied setups sometimes speak cleartext internally, and an
+# operator's own relay may not bother with TLS.
+
+alert http $RESTRICTED_NET any -> $EXTERNAL_NET any (
+    msg:"SALUCA Agentic - cleartext LLM API request from restricted segment";
+    http.host; pcre:"/(api\.anthropic\.com|api\.openai\.com|openrouter\.ai|api\.deepseek\.com)$/i";
+    flow:established,to_server;
+    threshold:type limit, track by_src, count 1, seconds 300;
+    metadata:created_at 2026_08_20, confidence Medium;
+    classtype:policy-violation; sid:9200007; rev:1;)
+
+# --------------------------------------------------------------------------
+# OpenAI-compatible API shape against an internal or unexpected host
+# --------------------------------------------------------------------------
+# Catches a self-hosted or relayed model, which the SNI rules above cannot. The
+# /v1/chat/completions path is the near-universal convention, including for vLLM, Ollama's
+# compatibility layer, LM Studio, and most proxies. Seeing it cross a segment boundary that
+# should carry no AI traffic is the signal.
+
+alert http $RESTRICTED_NET any -> any any (
+    msg:"SALUCA Agentic - OpenAI-compatible inference request crossing a restricted boundary";
+    http.method; content:"POST";
+    http.uri; content:"/v1/chat/completions";
+    flow:established,to_server;
+    threshold:type limit, track by_src, count 1, seconds 300;
+    metadata:created_at 2026_08_20, confidence Medium;
+    reference:url,securityaffairs.com/197079/apt/china-linked-hackers-use-ai-agents-in-autonomous-attack-on-taiwan.html;
+    classtype:policy-violation; sid:9200008; rev:1;)
+
+# --------------------------------------------------------------------------
+# Deliberately NOT included
+# --------------------------------------------------------------------------
+# No rules keying on prompt content. Prompts are inside TLS to a third party; any rule
+# claiming to inspect them on the wire would be dishonest. The prompt-level bypass, which
+# is the actual technique, is visible only at a gateway you operate. See
+# detections/sigma/llm-authorization-assertion.yml.
+#
+# No JA3/JA4 fingerprints. Client fingerprints for these frameworks are not stable across
+# versions or Python TLS stacks, and publishing brittle ones invites false confidence.

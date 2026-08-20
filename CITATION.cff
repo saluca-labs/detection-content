@@ -1,0 +1,30 @@
+cff-version: 1.2.0
+title: "Saluca Detection Content"
+message: "If you use this detection content, please cite it."
+type: software
+authors:
+  - family-names: Ruvalcaba
+    given-names: Cristian
+    affiliation: "Saluca LLC"
+  - name: "Saluca Agentic AI Research Team"
+repository-code: "https://github.com/saluca-labs/detection-content"
+license: Apache-2.0
+version: "1.0.0"
+date-released: 2026-08-20
+abstract: >-
+  Detection engineering content for public threat campaigns, published one pack per
+  campaign under a single growing citation. Each pack states what it cannot detect before
+  what it can, and marks every rule as either an alert or a hunting rule. Rules ship as
+  experimental until tuned against real telemetry.
+keywords:
+  - detection engineering
+  - threat detection
+  - sigma
+  - yara
+  - suricata
+  - agentic ai security
+references:
+  - type: software
+    title: "Borrowed Trust: Detection Content for Three Concurrent Signed-Binary Sideload Campaigns"
+    doi: "10.5281/zenodo.21880002"
+    notes: "Published separately before consolidation into this repository. Cited, not replaced."
