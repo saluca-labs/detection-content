@@ -4,6 +4,9 @@ Detection content for intrusions run by **orchestrated LLM agents** rather than 
 
 Defensive only. Apache-2.0.
 
+**Paper:** [Agentic Intrusion: A Detection Engineering Analysis of the July 2026 Taiwan Campaign, and a Tempo Model for Agent-Driven Attacks](https://doi.org/10.5281/zenodo.22033405) · [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22033405.svg)](https://doi.org/10.5281/zenodo.22033405)
+Local copies: [`agentic-intrusion-v1.0.pdf`](agentic-intrusion-v1.0.pdf) · [`.md`](agentic-intrusion-v1.0.md)
+
 ---
 
 ## The short version

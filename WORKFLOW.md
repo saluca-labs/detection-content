@@ -86,19 +86,32 @@ This runs in CI too. A pack does not get a DOI until it is green.
 
 ## 5. Zenodo
 
-**One concept DOI, a new version per campaign.** Do not mint a fresh standalone DOI each
-time: a single growing citable work compounds, and every new version inherits the citation
-history of the prior ones.
+**One deposit per analysis, each with its own DOI.** Not one growing concept covering every
+campaign. This was tried and reverted on 2026-08-20: versioning a new campaign under the
+prior campaign's concept DOI retitles that concept, because a concept always displays its
+newest version, which makes the earlier analysis harder to cite on its own. The detection
+CONTENT consolidates; the CITATIONS do not.
 
-1. Tag a release: `git tag v<n>-<slug> && git push --tags`
-2. Zenodo picks up the GitHub release and creates a new **version** under the existing
-   concept DOI.
-3. Update root `CITATION.cff` with the new version and date.
-4. Add the campaign to the table in the root `README.md`.
+1. Write `campaigns/<slug>/.zenodo.json`. Copy the previous campaign's and edit it. Keep
+   `upload_type: publication`, `publication_type: report`, `license: cc-by-4.0` for the
+   report text, and state in `notes` that the detection content is Apache-2.0, because one
+   licence field cannot express both.
+2. Deposit and upload the paper PDF, the paper markdown, and the repository source archive:
 
-Prior work with its own DOI stays cited rather than absorbed. `borrowed-trust-detections`
-holds `10.5281/zenodo.21880002` from before consolidation; that deposit is immutable and
-still resolves, so it is referenced, not replaced.
+   ```bash
+   git archive --format=zip --prefix=detection-content-vN/ -o <out>.zip vN
+   python zenodo_deposit.py --metadata campaigns/<slug>/.zenodo.json        --file <paper>.pdf --file <paper>.md --file <out>.zip
+   ```
+
+   The script creates a DRAFT and stops. **Publishing is a human action**, because a DOI is
+   permanent.
+3. Cross-reference in `.zenodo.json` via `related_identifiers`: `isPartOf` the previous
+   analysis DOI, `isSupplementedBy` the repository URL.
+4. After publishing, add the **concept** DOI (not the version DOI) to the campaign README,
+   the root README table, and `CITATION.cff`. The concept DOI resolves to the newest
+   revision of that paper.
+
+Prior deposits are never modified. Zenodo records are immutable and that is the point.
 
 ## 6. Paper
 

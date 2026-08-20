@@ -24,7 +24,11 @@ keywords:
   - suricata
   - agentic ai security
 references:
-  - type: software
-    title: "Borrowed Trust: Detection Content for Three Concurrent Signed-Binary Sideload Campaigns"
+  - type: report
+    title: "Borrowed Trust: A Detection Engineering Analysis of Three Concurrent Signed-Binary Sideload Campaigns"
     doi: "10.5281/zenodo.21880002"
-    notes: "Published separately before consolidation into this repository. Cited, not replaced."
+    notes: "Companion analysis for campaigns/2026-08-borrowed-trust."
+  - type: report
+    title: "Agentic Intrusion: A Detection Engineering Analysis of the July 2026 Taiwan Campaign, and a Tempo Model for Agent-Driven Attacks"
+    doi: "10.5281/zenodo.22033405"
+    notes: "Companion analysis for campaigns/2026-08-agentic-intrusion."

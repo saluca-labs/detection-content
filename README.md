@@ -1,7 +1,7 @@
 # Saluca Detection Content
 
 Detection engineering for campaigns worth writing about. One pack per campaign, one
-repository, one growing citation.
+repository. Each analysis is published separately with its own DOI.
 
 Defensive only. Apache-2.0.
 
@@ -9,10 +9,10 @@ Defensive only. Apache-2.0.
 
 ## Campaigns
 
-| Campaign | Date | What it covers | Indicators |
-|---|---|---|---|
-| [2026-08-borrowed-trust](campaigns/2026-08-borrowed-trust/) | Aug 2026 | Three concurrent campaigns sharing one primitive: a validly signed binary resolves a malicious dependency at runtime | atomic + behavioural |
-| [2026-08-agentic-intrusion](campaigns/2026-08-agentic-intrusion/) | Aug 2026 | Intrusion run by orchestrated LLM agents, after the July 2026 campaign against Taiwanese government and energy targets | behavioural only |
+| Campaign | Date | What it covers | Indicators | Paper |
+|---|---|---|---|---|
+| [2026-08-borrowed-trust](campaigns/2026-08-borrowed-trust/) | Aug 2026 | Three concurrent campaigns sharing one primitive: a validly signed binary resolves a malicious dependency at runtime | atomic + behavioural | [10.5281/zenodo.21880002](https://doi.org/10.5281/zenodo.21880002) |
+| [2026-08-agentic-intrusion](campaigns/2026-08-agentic-intrusion/) | Aug 2026 | Intrusion run by orchestrated LLM agents, after the July 2026 campaign against Taiwanese government and energy targets | behavioural only | [10.5281/zenodo.22033405](https://doi.org/10.5281/zenodo.22033405) |
 
 Cross-campaign hunt scripts live in [`hunt/`](hunt/). They tend to outlive the campaign that
 prompted them, so they are not filed under one.
@@ -48,12 +48,19 @@ The full procedure from public report to published article is in [WORKFLOW.md](W
 
 ## Citation
 
-This repository has a Zenodo concept DOI, with a new version per campaign, so a citation of
-the work as a whole stays valid as it grows. See [CITATION.cff](CITATION.cff).
+**Each campaign analysis is deposited separately with its own DOI**, so a specific campaign
+can be cited directly. This repository is the shared companion, linked from every deposit.
 
-The `borrowed-trust` pack was published separately before consolidation and holds its own
-DOI, [10.5281/zenodo.21880002](https://doi.org/10.5281/zenodo.21880002). That deposit is
-immutable and still resolves; it is cited here rather than replaced.
+| Paper | DOI |
+|---|---|
+| Borrowed Trust | [10.5281/zenodo.21880002](https://doi.org/10.5281/zenodo.21880002) |
+| Agentic Intrusion | [10.5281/zenodo.22033405](https://doi.org/10.5281/zenodo.22033405) |
+
+Cite the concept DOI to reference the newest revision of a given paper. To cite the
+detection content itself rather than an analysis, cite this repository and the release tag.
+
+Report text is CC-BY-4.0, matching the deposits. The detection content and tooling in this
+repository are Apache-2.0. See [CITATION.cff](CITATION.cff).
 
 ## Scope and intent
 
