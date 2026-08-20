@@ -13,7 +13,7 @@ open this file. The corpus entry is a summary; this file is authoritative.
 Three artefacts, one source of truth, published in a fixed order:
 
 ```
-  repo (this)  ->  Zenodo version  ->  Substack article
+  repo (this)  ->  Zenodo deposit  ->  Substack article
   the content      the citation        the reach
 ```
 
@@ -100,7 +100,7 @@ CONTENT consolidates; the CITATIONS do not.
 
    ```bash
    git archive --format=zip --prefix=detection-content-vN/ -o <out>.zip vN
-   python zenodo_deposit.py --metadata campaigns/<slug>/.zenodo.json        --file <paper>.pdf --file <paper>.md --file <out>.zip
+   python zenodo_deposit.py \n       --metadata campaigns/<slug>/.zenodo.json \n       --file <paper>.pdf --file <paper>.md --file <out>.zip
    ```
 
    The script creates a DRAFT and stops. **Publishing is a human action**, because a DOI is
@@ -115,12 +115,42 @@ Prior deposits are never modified. Zenodo records are immutable and that is the 
 
 ## 6. Paper
 
-The Zenodo deposit carries the pack. A separate white paper is worth writing only when
-there is a **transferable idea** rather than campaign specifics. The agentic-intrusion pack
-had one, the tempo model; the borrowed-trust pack did not, and correctly did not get a paper.
+**The paper IS the deposit.** Both analyses so far are `publication/report` deposits whose
+primary files are a paper in PDF and markdown, with the source archive attached. Borrowed
+Trust set that precedent and Agentic Intrusion follows it.
 
-If there is one, it goes to the same concept DOI as a version, or to its own deposit if it
-stands alone as research.
+So the question is not whether to write a paper; it is whether the campaign earns one. It
+does when there is a **transferable idea** rather than only campaign specifics. Borrowed
+Trust had one, the borrowed-trust primitive itself. Agentic Intrusion had one, the tempo
+model. A campaign with neither should get detection content in the repository and no deposit,
+because a DOI on a restatement of someone else's reporting is noise.
+
+Structure, which both papers follow and which the next one should:
+
+```
+Scope and provenance          what you had, what you did not, and every source
+1. The defender question      the thing nobody was answering
+2. The campaign               facts only, attributed
+3. The synthesis              YOUR contribution, marked as yours
+   3.1 Where it is weaker     before anyone else says it
+4. Detection, ranked          by durability: survives rotation / needs tuning / decays
+5. What this makes undetectable
+6. What actually found it     often not the detections, and say so
+7. Credit                     to the researchers whose work this rests on
+8. Limitations
+9. What would falsify this    testable predictions
+10. What we are not claiming
+11. AI disclosure
+References
+```
+
+Sections 9 and 10 are the ones that make it a paper rather than a blog post. Write them.
+
+Render with the house builder, which is pandoc plus tectonic:
+
+```bash
+python C:/AI/daily-brief/papers/build_pdf.py --file campaigns/<slug>/<paper>.md --force
+```
 
 ## 7. Substack
 
@@ -160,7 +190,7 @@ TTPs map into `tkhr-threat-intel`, which already holds ATT&CK v19.1 by tactic.
 [ ] falsepositives specific on every rule
 [ ] tools/validate.py green
 [ ] root README campaign table updated
-[ ] release tagged, Zenodo version minted, CITATION.cff updated
+[ ] release tagged, Zenodo deposit published by a human, concept DOI in both READMEs and CITATION.cff
 [ ] article drafted into subcon, cover generated, NOT published by the agent
 [ ] detection reasoning added to tkhr-detection-eng
 ```
