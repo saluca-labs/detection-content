@@ -3,8 +3,14 @@
   "upload_type": "software",
   "description": "<p>Detection engineering content for public threat campaigns, published one pack per campaign under a single growing citation. Each release adds a campaign; the concept DOI resolves to the latest version, so a citation of the work as a whole stays valid as it grows.</p><p><strong>Included in this version:</strong></p><ul><li><em>Borrowed Trust</em> (August 2026): three concurrent campaigns sharing one primitive, in which a validly signed binary resolves a malicious dependency at runtime. Sigma, YARA, KQL, SPL and Suricata content with atomic and behavioural indicators.</li><li><em>Agentic Intrusion</em> (August 2026): intrusion conducted by orchestrated LLM agents, written after the July 2026 campaign against Taiwanese government and energy targets in which up to eight agents built on open-source frameworks worked 21 systems over four days. No atomic indicators were published for that campaign, so the pack is behavioural, and its contribution is a tempo model that distinguishes agent-driven activity from human and scripted activity by the rhythm of machine-speed bursts separated by inference-latency pauses with technique change after failure.</li></ul><p><strong>Editorial standard.</strong> Every pack states what it cannot detect before what it can, and that section is written before the rules rather than after, because deciding the limits determines which rules are worth writing. Every rule is marked as either an alert or a hunting rule. Rules ship as experimental until tuned against real telemetry, and where no campaign telemetry was available for validation the packs say so explicitly rather than implying coverage.</p><p><strong>Scope.</strong> Defensive only. The content detects intrusion activity; it contains no offensive tooling, exploit code, or attack automation. Included hunt scripts are strictly read-only.</p>",
   "creators": [
-    {"name": "Ruvalcaba, Cristian", "affiliation": "Saluca LLC"},
-    {"name": "Saluca Agentic AI Research Team", "affiliation": "Saluca LLC"}
+    {
+      "name": "Ruvalcaba, Cristian",
+      "affiliation": "Saluca LLC"
+    },
+    {
+      "name": "Saluca Agentic AI Research Team",
+      "affiliation": "Saluca LLC"
+    }
   ],
   "keywords": [
     "detection engineering",
@@ -22,17 +28,11 @@
   "access_right": "open",
   "related_identifiers": [
     {
-      "identifier": "10.5281/zenodo.21880002",
-      "relation": "isNewVersionOf",
-      "resource_type": "software",
-      "scheme": "doi"
-    },
-    {
       "identifier": "https://github.com/saluca-labs/detection-content",
       "relation": "isSupplementTo",
       "resource_type": "software",
       "scheme": "url"
     }
   ],
-  "notes": "The Borrowed Trust pack was published separately before consolidation and holds DOI 10.5281/zenodo.21880002. That deposit is immutable and continues to resolve; it is cited here rather than replaced, and its original indicator schema is preserved unchanged so this repository does not disagree with a published record. Prepared with AI assistance (Anthropic Claude). Rule logic, the limitations sections, and all statements about what was and was not validated are authored and reviewed by the named human author, who is responsible for the claims."
+  "notes": "Version 2 under concept DOI 10.5281/zenodo.21880001. Version 1 was published as \"Borrowed Trust\" on 2026-08-11 and covered a single campaign; from this version the deposit is a growing collection, one pack per campaign, and the concept DOI always resolves to the newest. The Borrowed Trust pack is included unchanged, and its original indicator schema is preserved so this record does not disagree with the published v1. Prepared with AI assistance (Anthropic Claude). Rule logic, the limitations sections, and all statements about what was and was not validated are authored and reviewed by the named human author, who is responsible for the claims."
 }
