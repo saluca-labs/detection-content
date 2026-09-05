@@ -35,4 +35,4 @@ references:
   - type: report
     title: "Asserted Egress: A Detection Engineering Analysis of the May to July 2026 Agent Wiki Collusion, and the Vantage Problem in Containment Monitoring"
     doi: "10.5281/zenodo.22314504"
-    notes: "Companion analysis for campaigns/2026-09-agent-collusion. Concept DOI reserved 2026-09-04 (version DOI 10.5281/zenodo.22314505); deposit 22314505 is unsubmitted and resolves only once published."
+    notes: "Companion analysis for campaigns/2026-09-agent-collusion. Concept DOI, published and verified resolving 2026-09-04; 10.5281/zenodo.22314505 is the version DOI."
