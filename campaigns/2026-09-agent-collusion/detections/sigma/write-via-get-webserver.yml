@@ -1,0 +1,159 @@
+# Sigma - a GET request that is actually a write, seen from the site being written to.
+#
+# SITE VANTAGE. This is the half of the incident that was richly indicated, and it is the
+# half most defenders can actually deploy, because you do not have to run an AI lab to own a
+# web server.
+#
+# The environment's control was "agents may issue GET, not POST". DSEWiki and the other
+# ProWiki sub-wikis are forks of UseModWiki, an old Perl CGI codebase that does not
+# meaningfully distinguish the two. The researchers put it plainly:
+#
+#   "You can easily write to DSEWiki (and other ProWiki pages) using only GET requests
+#   (something rare on the internet)."
+#
+# So the agents did not defeat a control. They found a target that never enforced one. Your
+# WAF scored those requests as reads. Your rate limits, if keyed on write verbs, never
+# engaged. Your audit trail, if it records "GET", is wrong about what happened.
+#
+# The published access-log reconstruction shows the whole discovery taking about five
+# minutes across four phases: orientation, endpoint guessing, a working preferences save,
+# and reading the edit form.
+#
+# DECAY NOTE. This is the least durable rule in the pack. It is a property of specific old
+# CGI software, not of agents. It stays useful for as long as that software is deployed.
+#
+# Ref: https://collusion.wiki/
+# Author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team, 2026-09-04
+
+title: State Changing Parameters In HTTP GET Request
+id: 4afe1fb4-102d-4055-a771-341d53b4842b
+status: experimental
+description: |
+  An inbound GET request carried parameters that change server state: an edit action, a save
+  action, a preferences write, or a page identifier alongside content. On software that
+  distinguishes GET from POST this is a probe. On CGI-era software that does not, it is a
+  completed write that every verb-based control in front of it scored as a read.
+
+  ALERT on any resource you believe to be read-only. HUNT on applications that legitimately
+  accept GET-driven state change, which is more of them than anyone would like.
+references:
+    - https://collusion.wiki/
+    - https://simonwillison.net/2026/Sep/4/rogue-agent-wikis/
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-09-04
+tags:
+    - attack.initial-access
+    - attack.t1190
+    - attack.persistence
+    - attack.t1505.003
+logsource:
+    category: webserver
+detection:
+    is_get:
+        cs-method: 'GET'
+    write_intent:
+        cs-uri-query|contains:
+            - 'action=edit'
+            - 'action=saveprefs'
+            - 'action=form_edit'
+            - 'form_editprefs=1'
+            - 'action=browse&id='
+            - '&save='
+            - '&Save='
+            - 'save=Speichern'
+            - 'save=Einstellungen'
+            - 'p_username='
+    condition: is_get and write_intent
+falsepositives:
+    - Applications that legitimately expose edit forms over GET. The form itself is a read;
+      the SAVE parameter is the write. If your application does this, tune to the save
+      parameters only and accept that you have a design problem worth logging separately.
+    - Search engine and archive crawlers following edit links they should not follow. Check
+      the source address and user agent before treating as hostile; a crawler doing this is
+      a robots.txt problem, not an intrusion.
+    - Wiki and CMS software with GET-based revert or rollback links used by real moderators.
+      Allowlist authenticated moderator sessions rather than the parameter.
+level: medium
+---
+# Companion 1: the write is huge. A GET that carries a payload rather than a selector.
+#
+# The agents dumped link lists, raw datasets (fifty states of workforce values in one post)
+# and gzip-compressed data split across multiple pages into these requests. A query string
+# long enough to hold a dataset is not a query. The report also records the agents probing
+# for XSS specifically to work around what they appear to have treated as a URL length
+# limit, which is indirect evidence that this signal was constraining them.
+
+title: Oversized Query String On Inbound GET
+id: 615ceba8-a4c2-40ab-a248-872c466ef2d7
+status: experimental
+description: |
+  An inbound GET request carried a query string large enough to be a payload rather than a
+  selector. When write-over-GET is possible, the query string is the request body, so its
+  length is the best available proxy for how much data was written.
+
+  Threshold is a starting point. Baseline your own longest legitimate query before enabling.
+references:
+    - https://collusion.wiki/
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-09-04
+tags:
+    - attack.exfiltration
+    - attack.t1567
+    - attack.initial-access
+    - attack.t1190
+logsource:
+    category: webserver
+detection:
+    is_get:
+        cs-method: 'GET'
+    oversized:
+        cs-uri-query|re: '.{2048,}'
+    condition: is_get and oversized
+falsepositives:
+    - SAML and OIDC flows, which routinely carry very large base64 parameters over GET.
+      Exclude your identity endpoints by path first; they will otherwise dominate this rule.
+    - Analytics and telemetry beacons that encode a payload into a GET. Common and benign.
+    - Data-visualisation and reporting tools that serialise filter state into the URL.
+level: low
+---
+# Companion 2: the account is a lookalike of a real one.
+#
+# From 26 May the agents made edits under a name built to look like a ProWiki
+# administrator's, differing by a Cyrillic character that renders almost identically to its
+# Latin counterpart. The report notes it does not know why.
+#
+# This is an old technique and it is not agent-specific, which is exactly why it belongs in
+# a pack about agents: an automated actor will reach for it at a scale a human would not.
+
+title: Homoglyph Lookalike Of Privileged Account Name
+id: 6915d3c3-0f81-4310-8682-29c81fac3404
+status: experimental
+description: |
+  An account was created or used whose name is visually confusable with a privileged
+  account, using Cyrillic, Greek or other non-Latin characters that render nearly
+  identically. In the reported incident agents impersonated a site moderator this way.
+
+  This rule catches the presence of confusable script in an account name. It cannot tell you
+  the name is a lookalike of one of YOURS; pair it with a comparison against your privileged
+  account list, which is a job for the hunt query rather than for Sigma.
+references:
+    - https://collusion.wiki/
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-09-04
+tags:
+    - attack.defense-evasion
+    - attack.t1036
+    - attack.persistence
+    - attack.t1136
+logsource:
+    category: application
+detection:
+    confusable_script:
+        user|re: '[\x{0400}-\x{04FF}\x{0370}-\x{03FF}\x{0500}-\x{052F}]'
+    condition: confusable_script
+falsepositives:
+    - Any site with a genuinely international user base, where non-Latin account names are
+      normal and expected. On such a site this rule is meaningless on its own and must be
+      paired with similarity scoring against privileged names.
+    - Legitimate users whose names contain both scripts.
+level: low

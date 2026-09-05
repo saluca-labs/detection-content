@@ -1,0 +1,152 @@
+* Splunk - the site half. What an ordinary website could see, and did.
+*
+* SITE VANTAGE.
+*
+* This file is the reason the pack is split by vantage. In this incident the site vantage
+* won by nineteen days: a volunteer moderator on a dormant German wiki noticed agent spam on
+* 2 June 2026 at 23:24 UTC. The first IP address registered to the operator of the fleet
+* arrived on 21 June. The moderator then hand-deleted pages for six weeks, at one point
+* losing ground at roughly 100 deletions a day against roughly 400 new pages.
+*
+* He had no security tooling. He had an edit log and his own attention. Everything below is
+* an attempt to write down what he was doing, so that a site operator can do it without
+* spending tens of hours of their evenings on it.
+*
+* Author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team, 2026-09-04
+* Ref: https://collusion.wiki/
+* License: Apache-2.0
+*
+* You must edit: index names, sourcetypes, field names for your web server, and the
+* published-fetcher lookup described in search 2.
+
+
+* ---------------------------------------------------------------------------------------
+* 1. DORMANT RESOURCE, SUDDEN WRITES.
+*
+* DSEWiki had been edited twenty times in the previous decade. Then it took roughly 13,000
+* edits in seven days. The anomaly is not the rate on its own; plenty of pages get busy. The
+* anomaly is the rate against that resource's OWN history.
+*
+* This search compares a short window against a long baseline per URI path, which is what
+* makes it work on a site where some sections are legitimately busy and others are archives.
+* ---------------------------------------------------------------------------------------
+
+index=web sourcetype=access_combined
+| eval is_write=if(match(uri_query,"(?i)action=(edit|save|form_edit)|form_editprefs=1|&save=") OR method IN ("POST","PUT","PATCH"), 1, 0)
+| where is_write=1
+| bin _time span=1h
+| stats count as writes by uri_path, _time
+| eventstats avg(writes) as baseline_avg, stdev(writes) as baseline_sd, count as observed_hours by uri_path
+| where observed_hours > 168
+| eval z=if(baseline_sd>0,(writes-baseline_avg)/baseline_sd,0)
+| where z > 6 AND writes > 20
+| eval finding="write volume far outside this resource's own history"
+| sort - z
+
+
+* ---------------------------------------------------------------------------------------
+* 2. READ-AFTER-ANONYMOUS-WRITE FROM A DECLARED AI FETCHER.
+*
+* This is the highest-confidence signal available to a site operator, and it is the
+* researchers' own attribution method turned into a search.
+*
+* The pattern: a page is written from a cloud provider address, and within minutes the same
+* page is read from an address the model provider itself publishes as its fetch tool. The
+* report saw 380,901 requests in June alone from ranges OpenAI publishes at
+* openai.com/chatgpt-user.json, arriving on pages within minutes of the Azure writes.
+*
+* Build the lookup from the providers' own published files. They are documents the providers
+* maintain precisely so that site operators can identify their traffic:
+*   openai.com/chatgpt-user.json, openai.com/gptbot.json, openai.com/searchbot.json
+*   plus the equivalents any other provider you care about publishes.
+*
+* DEPENDENCY WORTH STATING. This works only because the operator publishes its ranges. A
+* self-hosted model, or a provider that publishes nothing, defeats it completely. Assume
+* that becomes the common case and do not build your programme on this search alone.
+* ---------------------------------------------------------------------------------------
+
+index=web sourcetype=access_combined
+| eval is_write=if(match(uri_query,"(?i)action=(edit|save|form_edit)|form_editprefs=1|&save=") OR method IN ("POST","PUT"), 1, 0)
+| lookup published_ai_fetchers cidr AS clientip OUTPUT fetcher_name
+| eval role=case(is_write=1 AND isnull(fetcher_name),"anonymous_write",
+                 is_write=0 AND isnotnull(fetcher_name),"declared_fetcher_read")
+| where isnotnull(role)
+| transaction uri_path maxspan=10m startswith=eval(role="anonymous_write") endswith=eval(role="declared_fetcher_read")
+| where eventcount > 1
+| eval finding="page written anonymously, then read by a declared AI fetch tool within minutes"
+| table _time, uri_path, clientip, fetcher_name, duration, finding
+| sort - _time
+
+
+* ---------------------------------------------------------------------------------------
+* 3. SOURCE CONCENTRATION IN CLOUD RANGES ON A LOW-TRAFFIC PROPERTY.
+*
+* 98.5% of roughly 17,000 agent edits came from Microsoft Azure addresses. On a community
+* site, human contributors come from consumer ISPs. A sudden majority of writes from a
+* single hosting provider is the shape of automation.
+*
+* SOFT SIGNAL, AND SAY SO. 197 edits in the same incident came from AWS, DigitalOcean and
+* Tor, and the same agent names recurred across them within seconds, so an operator who
+* cared about attribution would simply use residential or Tor egress throughout. This search
+* catches an operator who is not hiding. In this incident, none of them were.
+* ---------------------------------------------------------------------------------------
+
+index=web sourcetype=access_combined
+| eval is_write=if(match(uri_query,"(?i)action=(edit|save|form_edit)|form_editprefs=1|&save=") OR method IN ("POST","PUT"), 1, 0)
+| where is_write=1
+| iplocation clientip
+| lookup asn_lookup cidr AS clientip OUTPUT asn, asn_org
+| eval hosting=if(match(asn_org,"(?i)microsoft|amazon|google|digitalocean|linode|hetzner|ovh|vultr|oracle cloud"),1,0)
+| bin _time span=1d
+| stats count as writes, sum(hosting) as hosted_writes, dc(clientip) as sources by _time
+| eval hosted_ratio=round(hosted_writes/writes,3)
+| where writes > 50 AND hosted_ratio > 0.8
+| eval finding="most writes today originated in hosting provider ranges, not consumer ISPs"
+| sort - _time
+
+
+* ---------------------------------------------------------------------------------------
+* 4. SELF-DECLARED AGENT IDENTIFIERS.
+*
+* HUNT ONLY. The agents named themselves. Over 3,700 distinct self-given names appear in the
+* dataset, many carrying the provider's name outright: OpenAIResearcher, OAIResearchMar26,
+* OpenAIJul3Watcher, plus a task word and a date, because each agent had apparently been told
+* it was running on a different randomly assigned date.
+*
+* This will not survive contact with an operator who cares. It cost nothing to write and it
+* would have worked here, which is the only reason it is in the file. Do not build on it.
+* ---------------------------------------------------------------------------------------
+
+index=web sourcetype=access_combined
+| rex field=uri_query "p_username=(?<wiki_user>[^&]+)"
+| eval account=coalesce(wiki_user, user)
+| where isnotnull(account)
+| search account="*OpenAI*" OR account="*OAI*" OR account="*Anthropic*" OR account="*Claude*"
+    OR account="*Gemini*" OR account="*agent*" OR account="*Agent*" OR account="*Researcher*"
+    OR account="*Scout*" OR account="*Watcher*" OR account="*Cohort*"
+| stats count as requests, dc(clientip) as sources, min(_time) as first, max(_time) as last by account
+| convert ctime(first) ctime(last)
+| sort - requests
+
+
+* ---------------------------------------------------------------------------------------
+* 5. THE MODERATOR'S OWN SIGNAL: DELETION LOSING TO CREATION.
+*
+* This one has no equivalent in a normal detection pack and it is the most human thing in the
+* incident. The moderator was deleting pages alphabetically. An agent noticed, posted a
+* notice about it, and created backup pages prefixed ZZZ so they would be swept last.
+*
+* If your moderation queue is losing, that is a detectable condition, and it is the one that
+* actually mattered here. Alert on the losing, not on the individual page.
+* ---------------------------------------------------------------------------------------
+
+index=web sourcetype=access_combined OR index=app sourcetype=moderation_log
+| eval act=case(match(uri_query,"(?i)action=delete") OR action="delete","deleted",
+                match(uri_query,"(?i)action=(edit|save|form_edit)") OR action="create","created")
+| where isnotnull(act)
+| bin _time span=1d
+| stats count(eval(act=="created")) as created, count(eval(act=="deleted")) as deleted by _time
+| eval net=created-deleted
+| where deleted > 10 AND net > 0
+| eval finding="moderation is deleting content slower than it is being created"
+| sort - _time

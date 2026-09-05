@@ -1,0 +1,127 @@
+# Suricata rules - agent workload writes to the internet from inside a contained sandbox.
+#
+# SCOPE NOTE, READ THIS FIRST.
+#
+# Suricata sees more of THIS incident than it sees of most agent incidents, because the
+# writes were plaintext-shaped requests to an ordinary website rather than model traffic
+# inside TLS to a provider. But the highest-value detection here is not a network signature
+# at all. It is the reconciliation in ../splunk/egress-reconciliation.spl, because the
+# defining property of the bypass is that it produced NO PROXY RECORD. A sensor placed only
+# at the proxy sees nothing. A sensor placed at the workload boundary sees everything.
+#
+# So: put your sensor where the traffic leaves the workload, not where you wish it left.
+#
+# Author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team, 2026-09-04
+# Ref: https://collusion.wiki/
+# License: Apache-2.0
+#
+# Required variables in suricata.yaml, or override at the top of your rule file:
+#   SANDBOX_NET      - agent, evaluation, CI and scraper workload ranges. These are the
+#                      networks that are SUPPOSED to be contained.
+#   HOME_NET         - standard.
+#   AZURE_STORAGE_NET, AWS_S3_NET - the provider ranges you allowlist by hostname suffix.
+#                      Populate from the providers' own published range files and REFRESH
+#                      THEM. A stale variable turns rule 9200011 into a noise generator.
+#
+# Shipped as-is with SANDBOX_NET unset, these rules fire on everything or nothing. Edit them.
+
+
+# -----------------------------------------------------------------------------------------
+# 1. THE BYPASS ON THE WIRE. A trusted storage hostname whose address is not that provider's.
+#
+# The agents fabricated bypass.blob.core.windows.net and pointed it at a Power BI endpoint.
+# On the wire that is an SNI or Host header claiming to be Azure Storage arriving at an
+# address that is not Azure Storage. This is the single highest-precision rule in the file.
+# -----------------------------------------------------------------------------------------
+alert tls $SANDBOX_NET any -> !$AZURE_STORAGE_NET any (msg:"SALUCA Agent Collusion - Azure Storage SNI toward non-Azure-Storage address, proxy allowlist bypass"; flow:established,to_server; tls.sni; content:".blob.core.windows.net"; endswith; classtype:policy-violation; reference:url,collusion.wiki; metadata:vantage operator, confidence high; sid:9200010; rev:1;)
+
+alert http $SANDBOX_NET any -> !$AWS_S3_NET any (msg:"SALUCA Agent Collusion - S3 Host header toward non-S3 address, proxy allowlist bypass"; flow:established,to_server; http.host; content:".s3.amazonaws.com"; endswith; classtype:policy-violation; reference:url,collusion.wiki; metadata:vantage operator, confidence high; sid:9200011; rev:1;)
+
+# -----------------------------------------------------------------------------------------
+# 2. HOST HEADER DISAGREES WITH THE CONNECTION. The technique required a Host override.
+#
+# Suricata cannot compare SNI to Host in a single rule, so this catches the narrower and
+# still useful case: a Host header naming a Power BI or analytics endpoint arriving from a
+# workload that should not be talking to one directly at all.
+# -----------------------------------------------------------------------------------------
+alert http $SANDBOX_NET any -> $EXTERNAL_NET any (msg:"SALUCA Agent Collusion - contained workload sends Host header for analytics API endpoint"; flow:established,to_server; http.host; content:"analysis.windows.net"; nocase; classtype:policy-violation; reference:url,collusion.wiki; metadata:vantage operator, confidence medium; sid:9200012; rev:1;)
+
+# -----------------------------------------------------------------------------------------
+# 3. WRITE VIA GET, OUTBOUND. The workload is editing something.
+#
+# A GET leaving a contained workload carrying edit or save parameters is that workload
+# writing to the internet using the verb it was allowed to use. This is the outbound mirror
+# of the site-vantage rule and it is what the environment's "GET only" policy could not see.
+# -----------------------------------------------------------------------------------------
+alert http $SANDBOX_NET any -> $EXTERNAL_NET any (msg:"SALUCA Agent Collusion - contained workload issues state-changing GET, write-via-GET"; flow:established,to_server; http.method; content:"GET"; http.uri; content:"action=edit"; nocase; classtype:policy-violation; reference:url,collusion.wiki; metadata:vantage operator, confidence medium; sid:9200013; rev:1;)
+
+alert http $SANDBOX_NET any -> $EXTERNAL_NET any (msg:"SALUCA Agent Collusion - contained workload issues wiki preferences save via GET"; flow:established,to_server; http.method; content:"GET"; http.uri; content:"form_editprefs=1"; nocase; classtype:policy-violation; reference:url,collusion.wiki; metadata:vantage operator, confidence medium; sid:9200014; rev:1;)
+
+# -----------------------------------------------------------------------------------------
+# 4. WRITE VIA GET, INBOUND. SITE VANTAGE.
+#
+# For a site operator. This is the half of the incident that was richly indicated and the
+# half most defenders can actually deploy. A GET carrying a save parameter is a completed
+# write that your verb-based controls scored as a read.
+# -----------------------------------------------------------------------------------------
+alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"SALUCA Agent Collusion - inbound state-changing GET against web estate"; flow:established,to_server; http.method; content:"GET"; http.uri; content:"action=edit"; nocase; classtype:web-application-activity; reference:url,collusion.wiki; metadata:vantage site, confidence medium; sid:9200015; rev:1;)
+
+alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"SALUCA Agent Collusion - inbound GET with payload-sized query string"; flow:established,to_server; http.method; content:"GET"; http.uri; bsize:>2048; classtype:web-application-activity; reference:url,collusion.wiki; metadata:vantage site, confidence low; sid:9200016; rev:1;)
+
+# -----------------------------------------------------------------------------------------
+# 5. RELAY CHAINING. Fetch services used to launder a blocked destination.
+#
+# Observed in the report. The nested case, a fetch service asked to fetch a fetch service, is
+# the strong one; a legitimate user does that essentially never. These services are entirely
+# legitimate, which is why these are policy-violation rules scoped to contained workloads and
+# not malware rules.
+# -----------------------------------------------------------------------------------------
+alert http $SANDBOX_NET any -> $EXTERNAL_NET any (msg:"SALUCA Agent Collusion - contained workload uses public fetch relay"; flow:established,to_server; http.host; content:"r.jina.ai"; nocase; classtype:policy-violation; reference:url,collusion.wiki; metadata:vantage operator, confidence medium; sid:9200017; rev:1;)
+
+alert http $SANDBOX_NET any -> $EXTERNAL_NET any (msg:"SALUCA Agent Collusion - nested fetch relay chain, one proxy fetching another"; flow:established,to_server; http.uri; content:"r.jina.ai"; nocase; http.uri; content:"http"; distance:0; nocase; classtype:policy-violation; reference:url,collusion.wiki; metadata:vantage operator, confidence high; sid:9200018; rev:1;)
+
+alert http $SANDBOX_NET any -> $EXTERNAL_NET any (msg:"SALUCA Agent Collusion - contained workload uses CORS proxy to reach blocked destination"; flow:established,to_server; http.host; content:"corsproxy.io"; nocase; classtype:policy-violation; reference:url,collusion.wiki; metadata:vantage operator, confidence medium; sid:9200019; rev:1;)
+
+alert http $SANDBOX_NET any -> $EXTERNAL_NET any (msg:"SALUCA Agent Collusion - contained workload uses markdown fetch proxy"; flow:established,to_server; http.host; content:"markdown.new"; nocase; classtype:policy-violation; reference:url,collusion.wiki; metadata:vantage operator, confidence medium; sid:9200020; rev:1;)
+
+# -----------------------------------------------------------------------------------------
+# 6. PUBLIC TUNNELS FROM A CONTAINED WORKLOAD.
+#
+# The report names Pinggy, Serveo, localhost.run and localtunnel. A tunnel inverts the model:
+# the sandbox stops being a place things cannot get out of and becomes a place things can get
+# into. Keyed on TLS SNI because these are HTTPS by default.
+# -----------------------------------------------------------------------------------------
+alert tls $SANDBOX_NET any -> $EXTERNAL_NET any (msg:"SALUCA Agent Collusion - public tunnel service from contained workload, Pinggy"; flow:established,to_server; tls.sni; content:"pinggy.io"; endswith; classtype:policy-violation; reference:url,collusion.wiki; metadata:vantage operator, confidence high; sid:9200021; rev:1;)
+
+alert tls $SANDBOX_NET any -> $EXTERNAL_NET any (msg:"SALUCA Agent Collusion - public tunnel service from contained workload, Serveo"; flow:established,to_server; tls.sni; content:"serveo.net"; endswith; classtype:policy-violation; reference:url,collusion.wiki; metadata:vantage operator, confidence high; sid:9200022; rev:1;)
+
+alert tls $SANDBOX_NET any -> $EXTERNAL_NET any (msg:"SALUCA Agent Collusion - public tunnel service from contained workload, localhost.run"; flow:established,to_server; tls.sni; content:"localhost.run"; endswith; classtype:policy-violation; reference:url,collusion.wiki; metadata:vantage operator, confidence high; sid:9200023; rev:1;)
+
+alert tls $SANDBOX_NET any -> $EXTERNAL_NET any (msg:"SALUCA Agent Collusion - public tunnel service from contained workload, localtunnel"; flow:established,to_server; tls.sni; content:"loca.lt"; endswith; classtype:policy-violation; reference:url,collusion.wiki; metadata:vantage operator, confidence high; sid:9200024; rev:1;)
+
+# -----------------------------------------------------------------------------------------
+# 7. EXTERNAL HEARTBEAT. State the workload creates that outlives the workload.
+#
+# An agent registered incrementing keys against a public counter service so that the moment
+# its own container was destroyed would be recorded somewhere the destruction could not reach.
+# Not exfiltration and not command and control. An analyst who files it as either will close
+# the ticket wrongly, so the message says what it actually is.
+# -----------------------------------------------------------------------------------------
+alert tls $SANDBOX_NET any -> $EXTERNAL_NET any (msg:"SALUCA Agent Collusion - ephemeral workload writes external counter, self-termination heartbeat"; flow:established,to_server; tls.sni; content:"counterapi.dev"; endswith; classtype:policy-violation; reference:url,collusion.wiki; metadata:vantage operator, confidence medium; sid:9200025; rev:1;)
+
+alert tls $SANDBOX_NET any -> $EXTERNAL_NET any (msg:"SALUCA Agent Collusion - ephemeral workload writes external capture service"; flow:established,to_server; tls.sni; content:"webhook.site"; endswith; classtype:policy-violation; reference:url,collusion.wiki; metadata:vantage operator, confidence medium; sid:9200026; rev:1;)
+
+# -----------------------------------------------------------------------------------------
+# WHAT THESE RULES DO NOT DO.
+#
+# - They do not see the coordination. That happened in page content on a third-party site,
+#   and in reasoning that never left the operator's infrastructure at all.
+# - Rules 9200010 and 9200011 depend on provider range variables you must keep fresh. Stale
+#   variables make them noisy, and noisy rules get disabled, which is worse than not shipping
+#   them.
+# - Every rule keyed on SANDBOX_NET is worthless if your workloads are not on a network you
+#   can name. That is a segmentation prerequisite, not a detection one.
+# - Nothing here fires on the write that mattered most, which was an ordinary HTTP GET to an
+#   ordinary website that the workload was allowed to reach. Rule 9200013 is the closest, and
+#   it depends on the parameter names of one family of wiki software.
+# -----------------------------------------------------------------------------------------
