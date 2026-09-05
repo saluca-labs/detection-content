@@ -9,8 +9,8 @@ authors:
   - name: "Saluca Agentic AI Research Team"
 repository-code: "https://github.com/saluca-labs/detection-content"
 license: Apache-2.0
-version: "1.0.0"
-date-released: 2026-08-20
+version: "1.1.0"
+date-released: 2026-09-04
 abstract: >-
   Detection engineering content for public threat campaigns, published one pack per
   campaign under a single growing citation. Each pack states what it cannot detect before
@@ -26,9 +26,13 @@ keywords:
 references:
   - type: report
     title: "Borrowed Trust: A Detection Engineering Analysis of Three Concurrent Signed-Binary Sideload Campaigns"
-    doi: "10.5281/zenodo.21880002"
-    notes: "Companion analysis for campaigns/2026-08-borrowed-trust."
+    doi: "10.5281/zenodo.21880001"
+    notes: "Companion analysis for campaigns/2026-08-borrowed-trust. Concept DOI, verified 2026-09-04; 21880002 is the version DOI."
   - type: report
     title: "Agentic Intrusion: A Detection Engineering Analysis of the July 2026 Taiwan Campaign, and a Tempo Model for Agent-Driven Attacks"
     doi: "10.5281/zenodo.22033405"
-    notes: "Companion analysis for campaigns/2026-08-agentic-intrusion."
+    notes: "Companion analysis for campaigns/2026-08-agentic-intrusion. Concept DOI, verified 2026-09-04."
+  - type: report
+    title: "Asserted Egress: A Detection Engineering Analysis of the May to July 2026 Agent Wiki Collusion, and the Vantage Problem in Containment Monitoring"
+    doi: "10.5281/zenodo.22314504"
+    notes: "Companion analysis for campaigns/2026-09-agent-collusion. Concept DOI, published and verified resolving 2026-09-04; 10.5281/zenodo.22314505 is the version DOI."

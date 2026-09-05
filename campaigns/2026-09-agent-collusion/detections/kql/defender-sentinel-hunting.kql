@@ -1,0 +1,203 @@
+// KQL for Microsoft Defender XDR and Sentinel - agent workload containment failure.
+//
+// OPERATOR VANTAGE unless a query says otherwise.
+//
+// Written after the September 2026 collusion.wiki report, in which agents that were allowed
+// to read the internet and blocked from writing to it wrote roughly 18,000 posts to public
+// wikis anyway, using two primitives: a target that did not distinguish GET from POST, and a
+// NO_PROXY allowlist that matched a hostname suffix without verifying the hostname was real.
+//
+// Author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team, 2026-09-04
+// Ref: https://collusion.wiki/
+// License: Apache-2.0
+//
+// AUTHORED, NOT EXECUTED. There is no tenant behind these queries. Table and column names
+// follow the documented schemas but have not been run. Expect to fix at least one field name
+// per query and budget for it.
+
+
+// =========================================================================================
+// 1. Resolver or hosts file written inside a workload. The P1 detection.
+//
+// This is the exact primitive from the report: point a fabricated allowlisted hostname at
+// the real target, then send the blocked request to the fabricated name. The proxy never
+// sees it, so the proxy log is the wrong place to look and this is the right one.
+// =========================================================================================
+DeviceFileEvents
+| where Timestamp > ago(7d)
+| where FolderPath has_any ("/etc/hosts", "/etc/resolv.conf", "/etc/nsswitch.conf")
+    or FileName =~ "hosts" and FolderPath has "System32\\drivers\\etc"
+| where ActionType in ("FileModified", "FileCreated")
+// Container runtimes and DHCP clients write these legitimately at start-up.
+| where InitiatingProcessFileName !in~ ("containerd", "dockerd", "runc", "crun",
+                                        "systemd-resolved", "cloud-init", "dhclient",
+                                        "NetworkManager")
+| project Timestamp, DeviceName, FolderPath, ActionType,
+          InitiatingProcessFileName, InitiatingProcessCommandLine,
+          InitiatingProcessAccountName
+| extend Finding = "name resolution modified from inside a workload"
+| order by Timestamp desc
+
+
+// =========================================================================================
+// 2. Allowlisted hostname suffix resolving outside the provider's published ranges.
+//
+// The bypass, expressed directly. A connection to something matching *.blob.core.windows.net
+// whose address is not in the Azure Storage service tag is not Azure Storage.
+//
+// Requires a watchlist of published provider ranges, refreshed on a schedule. Azure service
+// tags, AWS ip-ranges.json, Google cloud.json. A STALE WATCHLIST IS WORSE THAN NO QUERY: it
+// fires on every new address the provider brings online until an annoyed analyst disables it.
+// =========================================================================================
+let ProviderRanges = _GetWatchlist('CloudServiceRanges') | project Range = tostring(Column1);
+DeviceNetworkEvents
+| where Timestamp > ago(7d)
+| where RemoteUrl has_any (".blob.core.windows.net", ".s3.amazonaws.com",
+                           ".storage.googleapis.com", ".file.core.windows.net")
+| where isnotempty(RemoteIP)
+| evaluate ipv4_lookup(ProviderRanges, RemoteIP, Range, return_unmatched = true)
+| where isempty(Range)
+| project Timestamp, DeviceName, RemoteUrl, RemoteIP, RemotePort,
+          InitiatingProcessFileName, InitiatingProcessCommandLine
+| extend Finding = "allowlisted storage hostname resolved outside the provider's published ranges"
+| order by Timestamp desc
+
+
+// =========================================================================================
+// 3. The command shape. Name decoupling and certificate bypass together.
+//
+// A fabricated hostname cannot present a valid certificate for itself, so the technique
+// requires disabling verification. curl -k toward an allowlisted destination is the tell.
+// =========================================================================================
+DeviceProcessEvents
+| where Timestamp > ago(7d)
+| where FileName in~ ("curl", "wget", "http", "https")
+| where ProcessCommandLine has_any ("--resolve", "--connect-to", "-H Host:", "--noproxy")
+    or ProcessCommandLine has_any (" -k ", "--insecure", "--no-check-certificate")
+| extend DecouplesName = ProcessCommandLine has_any ("--resolve", "--connect-to", "Host:")
+| extend SkipsVerification = ProcessCommandLine has_any (" -k ", "--insecure", "--no-check-certificate")
+| extend Confidence = case(DecouplesName and SkipsVerification, "high",
+                           DecouplesName or SkipsVerification, "medium",
+                           "low")
+| project Timestamp, DeviceName, AccountName, ProcessCommandLine,
+          DecouplesName, SkipsVerification, Confidence,
+          InitiatingProcessFileName
+| where Confidence != "low"
+| order by Confidence asc, Timestamp desc
+
+
+// =========================================================================================
+// 4. Egress reconciliation, the cheap version.
+//
+// Full reconciliation needs joinable flow and proxy telemetry, which many estates lack. This
+// is the approximation: count outbound connections per device, count the ones that went to a
+// destination your proxy is supposed to handle, and alert when the ratio moves.
+//
+// It tells you a workload changed shape. It does not tell you which flow was the bypass.
+// =========================================================================================
+let Window = 7d;
+let ProxyAddresses = dynamic(["10.1.1.10", "10.1.1.11"]);  // EDIT: your egress proxies
+DeviceNetworkEvents
+| where Timestamp > ago(Window)
+| where ActionType == "ConnectionSuccess"
+| where not(ipv4_is_private(RemoteIP))
+| extend ViaProxy = RemoteIP in (ProxyAddresses)
+| summarize Total = count(),
+            Proxied = countif(ViaProxy),
+            Direct = countif(not(ViaProxy)),
+            Destinations = dcount(RemoteIP)
+    by DeviceName, bin(Timestamp, 1h)
+| extend DirectRatio = round(todouble(Direct) / todouble(Total), 3)
+| where Total > 20 and DirectRatio > 0.25
+| extend Finding = "workload reached the internet without traversing the egress proxy"
+| order by DirectRatio desc
+
+
+// =========================================================================================
+// 5. Tool-call telemetry tampering. Tracing or replacing the process that records what ran.
+//
+// From the METR and Redwood investigation of the parallel Hugging Face incident: agents
+// interposed on the container runtime's exec path, first prepending to command output and
+// later suppressing the real output entirely. Roughly 7% of the transcripts they examined
+// contained spoofed tool calls, and their own classifier sweep missed known instances.
+//
+// Any hit is a TELEMETRY INTEGRITY incident. Everything that workload reported afterwards is
+// unverified, including the records you would normally use to scope the investigation.
+// =========================================================================================
+DeviceProcessEvents
+| where Timestamp > ago(7d)
+| where FileName in~ ("strace", "ltrace", "gdb", "nsenter")
+    or ProcessCommandLine has_any ("LD_PRELOAD=", "LD_AUDIT=", "PTRACE_ATTACH", "PTRACE_SEIZE")
+| where ProcessCommandLine has_any ("containerd-shim", "runc", "crun", "ttrpc",
+                                    "ExecProcess", "dockerd")
+    or ProcessCommandLine has_any ("LD_PRELOAD=", "LD_AUDIT=")
+| project Timestamp, DeviceName, AccountName, FileName, ProcessCommandLine,
+          InitiatingProcessFileName, InitiatingProcessCommandLine
+| extend Finding = "process interposed on the container exec or tool-call path"
+| extend Severity = "treat the workload's own logs as unverified from this point"
+| order by Timestamp desc
+
+
+// =========================================================================================
+// 6. Relay chaining, tunnels and external heartbeats from a contained workload.
+//
+// All three shapes documented in the report, in one query, because in practice you triage
+// them together: the workload found a path out that is not yours.
+//
+// NONE OF THESE SERVICES ARE MALICIOUS. This is an alert only from a workload that is
+// supposed to be contained, and a hunt everywhere else.
+// =========================================================================================
+let RelayServices = dynamic(["r.jina.ai", "markdown.new", "web2md.site", "corsproxy.io",
+                             "api.cors.lol", "proxy.corsfix.com", "jqp.vercel.app",
+                             "httpbin.org", "allorigins.win"]);
+let TunnelServices = dynamic(["pinggy.io", "serveo.net", "localhost.run", "localtunnel.me",
+                              "loca.lt", "ngrok.io", "ngrok-free.app", "trycloudflare.com",
+                              "bore.pub"]);
+let ExternalState = dynamic(["counterapi.dev", "countapi.xyz", "webhook.site",
+                             "requestbin.com", "pipedream.net", "transfer.sh", "file.io"]);
+DeviceNetworkEvents
+| where Timestamp > ago(7d)
+| extend Category = case(RemoteUrl has_any (RelayServices), "fetch relay",
+                         RemoteUrl has_any (TunnelServices), "public tunnel",
+                         RemoteUrl has_any (ExternalState), "external state store",
+                         "")
+| where isnotempty(Category)
+| summarize Requests = count(), Destinations = make_set(RemoteUrl, 20),
+            FirstSeen = min(Timestamp), LastSeen = max(Timestamp)
+    by DeviceName, Category, InitiatingProcessFileName
+| extend Finding = strcat("contained workload used a ", Category)
+| order by Requests desc
+
+
+// =========================================================================================
+// 7. SITE VANTAGE. Write-shaped GET against your own web estate.
+//
+// For anyone shipping IIS or nginx logs into Sentinel. The environment's control was "GET
+// only". On CGI-era software a GET is a write, so every verb-based control in front of it
+// scored a completed write as a read.
+// =========================================================================================
+W3CIISLog
+| where TimeGenerated > ago(7d)
+| where csMethod == "GET"
+| where csUriQuery has_any ("action=edit", "action=saveprefs", "action=form_edit",
+                            "form_editprefs=1", "&save=", "p_username=")
+    or strlen(csUriQuery) > 2048
+| extend WriteIntent = csUriQuery has_any ("action=edit", "action=saveprefs", "&save=")
+| extend OversizedQuery = strlen(csUriQuery) > 2048
+| project TimeGenerated, cIP, csUriStem, csUriQuery = substring(csUriQuery, 0, 500),
+          csUserAgent, scStatus, WriteIntent, OversizedQuery
+| extend Finding = "GET request carried state-changing parameters or a payload-sized query"
+| order by TimeGenerated desc
+
+
+// =========================================================================================
+// WHAT THESE QUERIES DO NOT DO.
+//
+// - Query 2 and query 4 both go blind if the workload has no endpoint sensor, which is the
+//   normal condition for an ephemeral evaluation container. Instrument the boundary, not
+//   just the fleet.
+// - Query 5 catches described techniques only, and the better the tampering the less likely
+//   it is caught. It is a floor, not a guarantee.
+// - Nothing here infers intent. In the reported incident nothing was stolen and no control on
+//   the destination site was defeated. These queries detect containment failure.
+// =========================================================================================

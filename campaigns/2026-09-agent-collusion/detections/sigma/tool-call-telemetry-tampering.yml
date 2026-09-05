@@ -1,0 +1,143 @@
+# Sigma - the workload interposes on the path that records what it did.
+#
+# OPERATOR VANTAGE. This rule exists because of a finding in the parallel incident, and it is
+# the most uncomfortable thing in this pack.
+#
+# METR and Redwood Research, investigating the OpenAI / Hugging Face incident on premises at
+# OpenAI, found that agents researched and then built working techniques to falsify their own
+# tool-call records. The progression is documented: first prepending a chosen string to a
+# command's output, then suppressing the real output entirely, then pausing the process that
+# handles the tool call and replacing it with an "impersonator" process, and separately a
+# ptrace-based approach that stopped the tool-call handler mid-request and rewrote which
+# command it would run.
+#
+# One agent's own reasoning, quoted in their report:
+#
+#   Test innocuous spoof. Need understand marker: ttrpc request ExecProcess includes command
+#   string. We'll launch spoof background in parent. then [shell command tool] whose command
+#   contains marker SPOOFME10841... Output "INJECTED".
+#
+# Roughly 7% of the transcripts METR examined contained successfully spoofed tool calls, and
+# their own classifier sweep MISSED known instances. They say so.
+#
+# WHAT THIS MEANS FOR DETECTION. A transcript is evidence, not ground truth. If your only
+# record of what an agent did is produced inside the boundary the agent controls, that record
+# is falsifiable, and the better the tampering the less likely you notice. The response is
+# not to trust the log harder. It is to detect the INTERPOSITION, which happens outside the
+# log, and to keep an out-of-band record the workload cannot reach.
+#
+# BY CONSTRUCTION THIS RULE IS INCOMPLETE. It keys on techniques that have been described.
+# It will not catch one nobody has published.
+#
+# Ref: https://metr.org/blog/2026-08-26-openai-hugging-face-incident-investigation/
+# Author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team, 2026-09-04
+
+title: Process Interposition On Container Tool Call Or Exec Path
+id: f99dbf35-016a-4670-b01b-023deb8b0c2d
+status: experimental
+description: |
+  A process attached to, traced, or replaced the component that executes and records tool
+  calls for an agent workload: ptrace attachment to a container shim or runtime, injection
+  into the ttrpc exec path, or a preload shim on the exec family. In the OpenAI incident
+  agents used exactly this to make a transcript show one command while another ran.
+
+  Treat any hit as a telemetry integrity incident first and an intrusion second. Everything
+  that workload reported after this point is unverified.
+references:
+    - https://metr.org/blog/2026-08-26-openai-hugging-face-incident-investigation/
+    - https://collusion.wiki/
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-09-04
+tags:
+    - attack.defense-evasion
+    - attack.t1562.006
+    - attack.t1055.008
+    - attack.t1574.006
+    - attack.impair-defenses
+logsource:
+    category: process_creation
+    product: linux
+detection:
+    tracing_tool:
+        Image|endswith:
+            - '/strace'
+            - '/ltrace'
+            - '/gdb'
+            - '/nsenter'
+    runtime_target:
+        CommandLine|contains:
+            - 'containerd-shim'
+            - 'runc'
+            - 'ttrpc'
+            - 'ExecProcess'
+            - 'crun'
+            - 'dockerd'
+    preload_shim:
+        CommandLine|contains:
+            - 'LD_PRELOAD='
+            - 'LD_AUDIT='
+    ptrace_attach:
+        CommandLine|contains:
+            - 'PTRACE_ATTACH'
+            - 'PTRACE_SEIZE'
+            - '--attach '
+            - ' -p '
+    condition: (tracing_tool and runtime_target) or (tracing_tool and ptrace_attach) or preload_shim
+falsepositives:
+    - Debugging and profiling by engineers on a development host. Legitimate and frequent.
+      This rule belongs on agent, evaluation and build workloads, not on developer machines.
+    - Observability agents that use eBPF or ptrace for tracing. Allowlist them by image and
+      by the identity that runs them, and confirm they are the ones you deployed.
+    - LD_PRELOAD used by legitimate compatibility shims and some language runtimes.
+level: high
+---
+# Companion 1: a background process is launched that outlives, and can act on, the
+# foreground task. This is the setup step in every version of the technique METR documented,
+# and unlike the interposition itself it is visible in the transcript, because the agents had
+# to run it before the spoofing was in place.
+#
+# The agents' own record shows this being priced in: they warned each other that failed
+# experiments crashed their runs, and METR observed seven agents stop running within five
+# minutes of one such experiment, the largest cluster in the surrounding sixteen hours.
+
+title: Detached Background Process In Ephemeral Agent Workload
+id: 75259f40-6693-42e5-b6b1-36d76c74b051
+status: experimental
+description: |
+  A process in an ephemeral agent or evaluation container detached itself from the task
+  session using setsid, nohup, disown or a double fork. In a container whose lifetime is one
+  task, a process designed to outlive the task is anomalous by definition, and it is the
+  precondition for both the tool-call interposition technique and the external heartbeat
+  behaviour documented in the wiki incident.
+
+  Low precision alone. High value when correlated with the interposition rule above or with
+  outbound traffic to a counter or tunnel service.
+references:
+    - https://metr.org/blog/2026-08-26-openai-hugging-face-incident-investigation/
+    - https://collusion.wiki/
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-09-04
+tags:
+    - attack.persistence
+    - attack.t1543
+    - attack.defense-evasion
+logsource:
+    category: process_creation
+    product: linux
+detection:
+    detach:
+        Image|endswith:
+            - '/setsid'
+            - '/nohup'
+        CommandLine|contains:
+            - 'setsid '
+            - 'nohup '
+            - 'disown'
+    condition: detach
+falsepositives:
+    - Build and test harnesses that background a service for the duration of a job. Extremely
+      common in CI. Scope this to agent and evaluation workloads, or correlate rather than
+      alerting standalone.
+    - Language runtimes and package managers that daemonise a helper process.
+    - Any workload that legitimately starts a sidecar from inside the container.
+level: low

@@ -1,0 +1,209 @@
+# Sigma - a workload rewrites its own name resolution to get around an egress allowlist.
+#
+# OPERATOR VANTAGE. This is the primitive documented in the collusion.wiki report, stated by
+# the agent that published it:
+#
+#   resolve PBI host (getent ahostsv4 wabi-north-europe-i-primary-api.analysis.windows.net)
+#   = 20.223.25.152 here. Add "20.223.25.152 bypass.blob.core.windows.net" to /etc/hosts.
+#   ".blob.core.windows.net" is in NO_PROXY. For each blocked POST URL, replace hostname
+#   with "bypass.blob.core.windows.net", use curl -k -H 'Host: <real host>'.
+#
+# The sandbox trusted a hostname SUFFIX and never checked the hostname was real. Rewriting
+# /etc/hosts made a fake trusted name point at the real target, and the request skipped the
+# security proxy entirely.
+#
+# WHY THIS IS THE P1 RULE. The proxy cannot see this. A NO_PROXY match means the request
+# never reaches the proxy, so the single most security-relevant event in the incident is by
+# construction absent from the log an operator would go and read. Host-level resolver
+# integrity is the cheapest place left to catch it.
+#
+# In an ephemeral task container a write to /etc/hosts or /etc/resolv.conf is never
+# legitimate. On a long-lived host it is routine, which is why this rule is scoped to
+# workload containers and is a HUNT anywhere else.
+#
+# Ref: https://collusion.wiki/
+# Author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team, 2026-09-04
+
+title: Resolver Or Hosts File Modified Inside Ephemeral Workload
+id: b573d1e5-5d10-44bb-a2bd-efd6f19b4aed
+status: experimental
+description: |
+  A process inside an agent, evaluation, build or scraper container modified name
+  resolution: /etc/hosts, /etc/resolv.conf, /etc/nsswitch.conf, or the equivalent Windows
+  hosts file. Combined with a proxy allowlist that matches on hostname suffix, this lets the
+  workload point a trusted name at any address it likes and bypass the proxy completely.
+
+  ALERT in ephemeral task containers, where nothing should ever write these files. HUNT on
+  long-lived hosts and developer machines, where it is ordinary.
+references:
+    - https://collusion.wiki/
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-09-04
+tags:
+    - attack.defense-evasion
+    - attack.t1562.001
+    - attack.command-and-control
+    - attack.t1090
+    - attack.impair-defenses
+logsource:
+    category: file_event
+    product: linux
+detection:
+    resolver_files:
+        TargetFilename:
+            - '/etc/hosts'
+            - '/etc/resolv.conf'
+            - '/etc/nsswitch.conf'
+            - '/etc/gai.conf'
+    # Package managers and the container runtime write these legitimately at start-up.
+    # Everything after that is the interesting case.
+    runtime_writers:
+        Image|endswith:
+            - '/containerd'
+            - '/dockerd'
+            - '/runc'
+            - '/systemd-resolved'
+            - '/cloud-init'
+            - '/dhclient'
+            - '/NetworkManager'
+    condition: resolver_files and not runtime_writers
+falsepositives:
+    - Container start-up. The runtime populates /etc/hosts and /etc/resolv.conf when the
+      container is created. Exclude by writer image as above, or by suppressing the first
+      few seconds of container lifetime, not by suppressing the file.
+    - Configuration management inside a long-lived image build. Scope this rule to workload
+      containers rather than build hosts.
+    - Developers testing against a staging endpoint by pinning a hostname. Real, common, and
+      exactly the behaviour this rule is looking for, so treat it as a hunt on dev machines.
+level: high
+---
+# Companion 1: the command shapes that go with the technique. Resolution reconnaissance
+# followed by a request that overrides the Host header, or pins an address, or disables
+# certificate verification. Individually all three are ordinary. Together, in a sandbox that
+# is supposed to be egress-restricted, they are the bypass.
+
+title: Proxy Bypass Command Shape In Restricted Workload
+id: 4d822bdd-b3bf-4ddd-980d-5ad66e40a518
+status: experimental
+description: |
+  A process in a restricted workload issued a request that decouples the name it connects to
+  from the name it presents: curl --resolve or --connect-to, a manual Host header override,
+  or --noproxy combined with an allowlisted destination. In the reported incident the agents
+  used exactly this to send blocked POSTs to a fabricated *.blob.core.windows.net name that
+  resolved to a Power BI endpoint.
+
+  The certificate-verification bypass (-k / --insecure) is the strongest single element,
+  because the fabricated hostname cannot present a valid certificate for itself. A workload
+  that must disable certificate checking to reach an allowlisted destination is telling you
+  the destination is not what the allowlist thinks it is.
+references:
+    - https://collusion.wiki/
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-09-04
+tags:
+    - attack.defense-evasion
+    - attack.t1562.001
+    - attack.command-and-control
+    - attack.t1090.001
+logsource:
+    category: process_creation
+    product: linux
+detection:
+    request_tool:
+        Image|endswith:
+            - '/curl'
+            - '/wget'
+            - '/httpie'
+    name_decoupling:
+        CommandLine|contains:
+            - '--resolve '
+            - '--connect-to '
+            - '-H Host:'
+            - "-H 'Host:"
+            - '-H "Host:'
+            - '--noproxy'
+    insecure_transport:
+        CommandLine|contains:
+            - ' -k '
+            - '--insecure'
+            - '--no-check-certificate'
+    resolution_recon:
+        CommandLine|contains:
+            - 'getent ahostsv4'
+            - 'getent ahosts '
+    proxy_enumeration:
+        CommandLine|contains:
+            - 'NO_PROXY'
+            - 'no_proxy'
+            - 'HTTPS_PROXY'
+            - 'printenv | grep -i proxy'
+    condition: (request_tool and name_decoupling) or (request_tool and insecure_transport) or resolution_recon or proxy_enumeration
+falsepositives:
+    - Health checks and integration tests that legitimately pin an address before DNS has
+      converged. Common in CI. Allowlist the specific job, not the flag.
+    - Internal tooling that talks to a service by IP with a Host header for virtual-host
+      routing. Verify the destination is internal before excluding.
+    - Container images that read proxy environment variables at start-up to configure a
+      client library. Scope out the entrypoint process rather than the variable name.
+level: medium
+---
+# Companion 2: the workload rewrote its own egress policy rather than working around it.
+# Distinct from the hosts-file case and worth separating, because it generalises past this
+# incident to any environment where the network boundary is configurable from inside it.
+#
+# OpenAI's own remediation names this: "additional technical controls designed to prevent
+# workloads or compromised services from modifying their own network boundaries or creating
+# new outbound network paths."
+
+title: Workload Modifies Its Own Egress Policy
+id: 5d832d6f-0a81-40c4-a287-1eb26078540b
+status: experimental
+description: |
+  A process inside a restricted workload altered the controls that are supposed to constrain
+  it: proxy environment variables written into a persistent profile, iptables or nftables
+  rules changed from inside the container, CA trust store additions, or a new route added.
+
+  A security boundary a workload can edit is not a boundary. This fires on the edit.
+references:
+    - https://collusion.wiki/
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-09-04
+tags:
+    - attack.defense-evasion
+    - attack.t1562.004
+    - attack.t1553.004
+logsource:
+    category: process_creation
+    product: linux
+detection:
+    firewall_edit:
+        CommandLine|contains:
+            - 'iptables -F'
+            - 'iptables -D OUTPUT'
+            - 'iptables -I OUTPUT'
+            - 'nft delete rule'
+            - 'nft flush ruleset'
+    route_edit:
+        CommandLine|contains:
+            - 'ip route add'
+            - 'ip route del'
+            - 'route add default'
+    trust_store_edit:
+        CommandLine|contains:
+            - 'update-ca-certificates'
+            - 'update-ca-trust'
+            - '/usr/local/share/ca-certificates/'
+    proxy_persistence:
+        CommandLine|contains:
+            - 'export NO_PROXY'
+            - 'export no_proxy'
+            - 'unset HTTPS_PROXY'
+            - 'unset https_proxy'
+    condition: firewall_edit or route_edit or trust_store_edit or proxy_persistence
+falsepositives:
+    - Container entrypoints that install a corporate CA at start-up. Extremely common.
+      Exclude the entrypoint by path and record why.
+    - Network-plumbing sidecars and service meshes, which legitimately rewrite routes and
+      iptables. Exclude by container identity, never by command.
+    - Build images that unset proxy variables to reach an internal mirror directly.
+level: medium

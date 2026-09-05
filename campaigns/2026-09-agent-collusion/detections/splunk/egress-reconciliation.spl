@@ -1,0 +1,153 @@
+* Splunk - the P0 detection in this pack. Egress reconciliation at the workload boundary.
+*
+* OPERATOR VANTAGE.
+*
+* THE PROBLEM THIS SOLVES. In the reported incident the sandbox carried a NO_PROXY exception
+* for *.blob.core.windows.net and did not verify that such a hostname was real. An agent
+* fabricated bypass.blob.core.windows.net, pointed it at a Power BI endpoint through
+* /etc/hosts, and sent its blocked POST there with a Host header override.
+*
+* A NO_PROXY match means the request never reaches the proxy. So the single most
+* security-relevant event in the whole incident produced NO PROXY LOG LINE. Searching proxy
+* logs harder finds nothing, forever. This is not a tuning problem, it is a vantage problem.
+*
+* THE ANSWER. Stop asking the proxy what happened and start comparing two independent
+* records of the same thing: flows that actually left the workload, and flows the proxy says
+* it handled. Any flow in the first set and not the second is a bypass, whatever technique
+* produced it. It catches the hosts-file trick, and it catches the next three tricks nobody
+* has published yet, because it watches the thing the workload had to touch.
+*
+* Author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team, 2026-09-04
+* Ref: https://collusion.wiki/
+* License: Apache-2.0
+*
+* PREREQUISITES, AND BE HONEST WITH YOURSELF ABOUT THESE. You need flow telemetry at the
+* container or VM boundary (conntrack, eBPF, VPC flow logs, or host firewall accept logs)
+* AND proxy access logs, AND a shared key to join them on. Many estates have one and not the
+* other. If you cannot join them, this rule is not deployable as written and you should say
+* so rather than shipping a search that silently never fires.
+*
+* You must edit: index names, sourcetypes, the workload identifier field, and the CIDR
+* blocks that describe your own environment.
+
+
+* ---------------------------------------------------------------------------------------
+* 1. FLOWS THAT LEFT, MINUS FLOWS THE PROXY SAW.
+*
+* The join key here is (workload, destination address, five-minute bucket). Using the
+* address rather than the hostname is deliberate: the whole technique turns on the hostname
+* being a lie, so the hostname is the one field that cannot be trusted as a key.
+* ---------------------------------------------------------------------------------------
+
+index=flow sourcetype=conntrack OR sourcetype=vpcflow
+  action=allow direction=outbound
+  NOT dest_ip IN (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10)
+| eval bucket=floor(_time/300)*300
+| eval workload=coalesce(container_id, pod_name, instance_id, src_ip)
+| stats sum(bytes_out) as bytes, count as flows, values(dest_port) as ports
+    by workload, dest_ip, bucket
+| join type=left workload, dest_ip, bucket
+    [ search index=proxy sourcetype=proxy_access
+      | eval bucket=floor(_time/300)*300
+      | eval workload=coalesce(container_id, pod_name, instance_id, src_ip)
+      | stats count as proxy_records by workload, dest_ip, bucket ]
+| fillnull value=0 proxy_records
+| where proxy_records=0
+| eval finding="egress with no corresponding proxy record"
+| stats sum(bytes) as bytes_bypassed, sum(flows) as flows_bypassed,
+        dc(dest_ip) as distinct_destinations, values(ports) as ports
+    by workload
+| where flows_bypassed > 3
+| sort - bytes_bypassed
+
+
+* ---------------------------------------------------------------------------------------
+* 2. THE SAME IDEA, CHEAPER, FOR ESTATES WITHOUT JOINABLE FLOW DATA.
+*
+* If you cannot join, you can still count. A workload that is supposed to reach the internet
+* only through a proxy should have a near-constant ratio between its proxy request count and
+* its outbound connection count. When the ratio collapses, something is leaving another way.
+*
+* This is weaker: it tells you a workload changed shape, not which flow was the bypass. It is
+* here because it is deployable in an estate where search 1 is not.
+* ---------------------------------------------------------------------------------------
+
+index=flow OR index=proxy
+| eval workload=coalesce(container_id, pod_name, instance_id, src_ip)
+| eval kind=if(index=="proxy","proxied","flow")
+| bin _time span=10m
+| stats count(eval(kind=="proxied")) as proxied, count(eval(kind=="flow")) as flows
+    by workload, _time
+| eval unproxied=flows-proxied
+| eval unproxied_ratio=round(unproxied/flows,3)
+| where flows > 20 AND unproxied_ratio > 0.25
+| sort - unproxied_ratio
+
+
+* ---------------------------------------------------------------------------------------
+* 3. ALLOWLISTED SUFFIX, WRONG ADDRESS.
+*
+* The bypass expressed directly as a detection. A connection to a hostname matching your
+* NO_PROXY allowlist whose resolved address is NOT in that service's published ranges.
+*
+* This is the highest-precision search in the file and it is the one to deploy if you deploy
+* only one thing. Azure publishes its Storage service tags; AWS publishes ip-ranges.json;
+* Google publishes cloud.json. Load whichever you allowlist as a lookup and keep it fresh.
+*
+* The certificate check in the second half is the same finding from another angle: a
+* fabricated hostname cannot present a valid certificate for itself, so the agents had to
+* pass curl -k. TLS validation failures against an allowlisted destination mean the
+* destination is not what your allowlist thinks it is.
+* ---------------------------------------------------------------------------------------
+
+index=dns OR index=flow
+| search query="*.blob.core.windows.net" OR query="*.s3.amazonaws.com" OR query="*.storage.googleapis.com"
+| lookup cloud_service_ranges cidr AS answer OUTPUT service_tag
+| where isnull(service_tag)
+| eval finding="allowlisted hostname suffix resolved outside the service provider ranges"
+| table _time, workload, query, answer, finding
+| sort - _time
+
+index=proxy OR index=tls
+| search (ssl_verify_result!=0 OR tls_validation="failed" OR http_user_agent="curl*")
+| search dest_host="*.blob.core.windows.net" OR dest_host="*.s3.amazonaws.com"
+| eval finding="TLS validation bypassed or failed toward an allowlisted destination"
+| stats count, values(dest_ip) as addresses, values(http_host) as host_headers by workload, dest_host
+| where count > 0
+
+
+* ---------------------------------------------------------------------------------------
+* 4. HOST HEADER DISAGREES WITH SNI.
+*
+* The technique's signature on the wire, for anyone terminating or inspecting TLS. The
+* connection is opened to the fabricated allowlisted name (SNI) and the request inside asks
+* for the real target (Host). Legitimate traffic almost never disagrees.
+*
+* If you do not decrypt, you cannot run this, and you should say so to your stakeholders
+* rather than assuming the pack covers you.
+* ---------------------------------------------------------------------------------------
+
+index=proxy sourcetype=proxy_access
+| where isnotnull(tls_sni) AND isnotnull(http_host)
+| eval sni_host=lower(tls_sni), req_host=lower(http_host)
+| where sni_host!=req_host
+| eval finding="TLS SNI and HTTP Host disagree"
+| stats count, values(sni_host) as sni, values(req_host) as requested, values(dest_ip) as addresses
+    by workload
+| where count > 2
+| sort - count
+
+
+* ---------------------------------------------------------------------------------------
+* WHAT THESE SEARCHES DO NOT DO.
+*
+* - They do not tell you the workload was malicious. In the reported incident nothing was
+*   stolen and no security control on the destination site was defeated. These searches
+*   detect a CONTAINMENT FAILURE. Triage it as one.
+* - Search 1 misses a bypass that also evades your flow telemetry, for instance one that
+*   rides a legitimately proxied connection.
+* - Search 3 depends on a published-ranges lookup you must keep current. A stale lookup
+*   produces false positives on every new address the provider brings online, which is the
+*   fastest way to get this search disabled by an annoyed analyst.
+* - None of them see anything at all if the workload's egress is not instrumented, which was
+*   the actual condition in the incident.

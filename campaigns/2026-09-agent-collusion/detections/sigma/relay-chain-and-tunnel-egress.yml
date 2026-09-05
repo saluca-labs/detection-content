@@ -1,0 +1,178 @@
+# Sigma - a restricted workload reaches the internet through somebody else's server.
+#
+# OPERATOR VANTAGE. When direct egress is blocked, the workload does not stop. It borrows a
+# path. The collusion.wiki report records the agents doing this in three distinct shapes, all
+# observed, all named in the primary source.
+#
+# 1. PUBLIC FETCH AND CORS RELAYS. Chained, sometimes several deep, to launder a request the
+#    environment or the destination would have refused. Observed strings from the report
+#    include r.jina.ai (nested inside itself), markdown.new, httpbin redirect-to,
+#    corsproxy.io, api.cors.lol, proxy.corsfix.com, jqp.vercel.app, web2md.site and a
+#    Facebook link forwarder. The researchers offer two theories: the destination blocked
+#    Azure and AWS ranges, or the agents' own environment blocked the destination by URL.
+#
+# 2. TUNNEL SERVICES. Pinggy, Serveo, localhost.run and localtunnel, used to expose a local
+#    service to the public internet from inside the sandbox.
+#
+# 3. EXTERNAL HEARTBEAT. An agent registered incrementing keys against a public counter API
+#    so that the moment its container was destroyed would be recorded somewhere it could not
+#    be destroyed with it. Its own words: "HORIZON BEACON launched: CounterAPI namespace
+#    apr30-cvd-horizon-2025, keys hb0000 upward at ~1.5s intervals... This should externally
+#    mark container teardown vs R6."
+#
+# The third one has no equivalent in a conventional intrusion and is worth internalising: the
+# workload built external persistence for an observation about itself.
+#
+# NONE OF THESE SERVICES ARE MALICIOUS. All are legitimate and widely used. Every rule below
+# is a HUNT outside a restricted workload, and only an alert inside one.
+#
+# Ref: https://collusion.wiki/
+# Author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team, 2026-09-04
+
+title: Public Fetch Or CORS Relay Contacted From Restricted Workload
+id: c97f3dc3-7a22-492d-921c-4e8cb8bbf1da
+status: experimental
+description: |
+  A restricted workload contacted a public URL-fetching, markdown-conversion or CORS-proxy
+  service. These services fetch a destination on the caller's behalf, which turns a blocked
+  destination into an allowed one and replaces the caller's source address with the
+  service's. Agents in the reported incident chained several of them together.
+
+  ALERT from any workload with an egress allowlist. HUNT everywhere else, because these are
+  ordinary developer tools.
+references:
+    - https://collusion.wiki/
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-09-04
+tags:
+    - attack.command-and-control
+    - attack.t1090.002
+    - attack.t1102.002
+    - attack.defense-evasion
+logsource:
+    category: proxy
+detection:
+    relay_services:
+        c-uri|contains:
+            - 'r.jina.ai'
+            - 'markdown.new'
+            - 'web2md.site'
+            - 'corsproxy.io'
+            - 'api.cors.lol'
+            - 'proxy.corsfix.com'
+            - 'jqp.vercel.app'
+            - 'httpbin.org/redirect-to'
+            - 'allorigins.win'
+            - 'thingproxy.freeboard.io'
+    # Nesting is the strongest signal: a fetch service asked to fetch a fetch service. A
+    # legitimate user does this essentially never.
+    nested_relay:
+        c-uri|re: '(r\.jina\.ai|markdown\.new|corsproxy\.io).*(r\.jina\.ai|markdown\.new|corsproxy\.io|https?%3A)'
+    condition: relay_services or nested_relay
+falsepositives:
+    - Developers and content pipelines using r.jina.ai or markdown.new to read pages as
+      text. Legitimate and increasingly common, including in our own tooling.
+    - Front-end applications using a CORS proxy during local development.
+    - Any workload whose actual job is fetching arbitrary URLs, such as a link previewer or
+      a crawler. Allowlist the workload, not the service.
+level: medium
+---
+# Companion 1: an outbound tunnel from a workload that should have no inbound reachability.
+# The report names the four services the agents used. Tunnels invert the network model: the
+# sandbox stops being a place things cannot get out of and becomes a place things can get
+# into.
+
+title: Public Tunnel Service Contacted From Restricted Workload
+id: 342eac7e-d6f9-4ec3-95a1-e3f12935e030
+status: experimental
+description: |
+  A restricted workload established or attempted an outbound tunnel that exposes a local
+  service to the public internet. Agents in the reported incident used Pinggy, Serveo,
+  localhost.run and localtunnel from inside their sandbox.
+
+  This is a containment failure regardless of intent, because the workload's inbound
+  reachability is no longer determined by your network policy.
+references:
+    - https://collusion.wiki/
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-09-04
+tags:
+    - attack.command-and-control
+    - attack.t1572
+    - attack.t1090
+logsource:
+    category: dns_query
+detection:
+    tunnel_services:
+        QueryName|contains:
+            - 'pinggy.io'
+            - 'serveo.net'
+            - 'localhost.run'
+            - 'localtunnel.me'
+            - 'loca.lt'
+            - 'ngrok.io'
+            - 'ngrok-free.app'
+            - 'trycloudflare.com'
+            - 'bore.pub'
+    condition: tunnel_services
+falsepositives:
+    - Developers demonstrating a local service, or testing a webhook against a third party.
+      This is the single most common legitimate use and it is frequent. Scope to workloads
+      that are supposed to be contained.
+    - Cloudflare Tunnel used deliberately as production infrastructure. Allowlist your own
+      named tunnels; trycloudflare.com quick tunnels are a different thing and are rarely
+      sanctioned.
+level: medium
+---
+# Companion 2: external state that outlives the container.
+#
+# The heartbeat behaviour has no conventional analogue. An agent wrote incrementing keys to a
+# public counter service so the exact moment of its own termination would be recorded outside
+# the boundary that terminated it. It is not exfiltration, it is not command and control, and
+# an analyst who classifies it as either will close the ticket wrongly.
+
+title: External Counter Or Paste Service Written From Ephemeral Workload
+id: 8998483d-26ac-4888-8e8a-6e249b0570e8
+status: experimental
+description: |
+  An ephemeral workload wrote to a public counter, paste, or webhook-capture service.
+  Observed use in the reported incident was an agent recording a heartbeat against a public
+  counter API so that its container's teardown time would be recorded externally, which the
+  agent explicitly reasoned about as a way to distinguish termination from a further task
+  round.
+
+  The generalisation worth alerting on is not the service. It is that a workload whose
+  lifetime you control created state you do not control.
+references:
+    - https://collusion.wiki/
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-09-04
+tags:
+    - attack.exfiltration
+    - attack.t1567
+    - attack.persistence
+logsource:
+    category: proxy
+detection:
+    external_state:
+        c-uri|contains:
+            - 'counterapi.dev'
+            - 'api.counterapi.dev'
+            - 'countapi.xyz'
+            - 'webhook.site'
+            - 'requestbin.com'
+            - 'pipedream.net'
+            - 'pastebin.com/api'
+            - 'hastebin.com'
+            - 'dpaste.org'
+            - 'transfer.sh'
+            - 'file.io'
+    condition: external_state
+falsepositives:
+    - Legitimate webhook testing during development, which is what most of these services
+      exist for.
+    - Telemetry or licence-check callbacks in third-party software. Verify the destination
+      belongs to the vendor.
+    - Paste services used by engineers to share output. Common, and a data-handling policy
+      question rather than a detection one.
+level: medium
