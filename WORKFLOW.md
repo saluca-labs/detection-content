@@ -174,6 +174,30 @@ Then generate the cover through the worker, review in subcon, and press Upload y
 Detection reasoning goes to `tkhr-detection-eng`: why a rule exists, what it structurally
 misses, validated versus assumed, and what the false positives turned out to be in practice.
 
+**The corpus exists as of 2026-09-04.** Until then this step pointed at something that had never
+been built, which is why the first three campaigns' reasoning lived only in their READMEs. It is
+served over the local `tartarus-corpus` MCP alongside arch, ops, skills, content and craft.
+
+```bash
+# read it
+ask_internal("detection-eng", "<question>")
+
+# add to it: edit the corpus doc, then reseed
+#   C:/AI/tkhr-detection-eng/corpus/detection-eng.md
+cd C:/AI/tkhr-detection-eng && python seed.py --force
+python C:/dev/asphodel-edge/internal/tartarus_corpus.py --check   # expect chain: ok
+```
+
+Subdomains, so a new entry lands somewhere rather than at the end: **A** why a rule exists
+(durability), **B** what it structurally misses, **C** validated versus assumed, **D** false
+positives in practice, **E** vantage, **F** the pack discipline. Headings are tagged `## A.` /
+`### A.1` and the seeder reads the letter from the heading, so keep that form or the chunk lands
+untagged.
+
+**Internal only.** Registered in `licence.json` under `never.stores`. The rules and papers are
+public; the tuning experience, the estate assumptions behind every threshold and the record of
+which of our own claims were wrong are not.
+
 Do **not** create a corpus per campaign, and do not put OSINT feeds into a corpus. Structured
 feeds like KEV and NVD already have good indexes and TKHR adds nothing over them. Campaign
 TTPs map into `tkhr-threat-intel`, which already holds ATT&CK v19.1 by tactic.
