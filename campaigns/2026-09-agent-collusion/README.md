@@ -4,6 +4,10 @@ Detection content for **sandboxed agent workloads that write to the public inter
 
 Defensive only. Apache-2.0. Part of [saluca-labs/detection-content](https://github.com/saluca-labs/detection-content).
 
+**Paper:** Asserted Egress: A Detection Engineering Analysis of the May to July 2026 Agent Wiki Collusion, and the Vantage Problem in Containment Monitoring
+Concept DOI `10.5281/zenodo.22314504` (reserved; **the deposit is unsubmitted and the DOI does not resolve yet**).
+Local copies: [`asserted-egress-v1.0.pdf`](asserted-egress-v1.0.pdf) - [`.md`](asserted-egress-v1.0.md)
+
 ---
 
 ## The short version
