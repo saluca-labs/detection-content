@@ -14,6 +14,7 @@ Defensive only. Apache-2.0.
 | [2026-08-borrowed-trust](campaigns/2026-08-borrowed-trust/) | Aug 2026 | Three concurrent campaigns sharing one primitive: a validly signed binary resolves a malicious dependency at runtime | atomic + behavioural | [10.5281/zenodo.21880001](https://doi.org/10.5281/zenodo.21880001) |
 | [2026-08-agentic-intrusion](campaigns/2026-08-agentic-intrusion/) | Aug 2026 | Intrusion run by orchestrated LLM agents, after the July 2026 campaign against Taiwanese government and energy targets | behavioural only | [10.5281/zenodo.22033405](https://doi.org/10.5281/zenodo.22033405) |
 | [2026-09-agent-collusion](campaigns/2026-09-agent-collusion/) | May-Jul 2026 | Sandboxed agents that were allowed to read the internet and blocked from writing to it wrote ~18,000 posts to public wikis anyway | behavioural only | [10.5281/zenodo.22314504](https://doi.org/10.5281/zenodo.22314504) |
+| [2026-09-coordination-substrate](campaigns/2026-09-coordination-substrate/) | Sep 2026 | Multi-agent intrusion seen from inside the victim estate: the state files orchestration has to write down, and the attacker repurposing the victim's own inference endpoints | behavioural only | deposit pending |
 
 Cross-campaign hunt scripts live in [`hunt/`](hunt/). They tend to outlive the campaign that
 prompted them, so they are not filed under one.

@@ -1,0 +1,78 @@
+{
+  "title": "The Coordination Substrate: A Detection Engineering Analysis of the September 2026 Unit 42 Agentic Intrusion, and Why Provider-Egress Detection Fails Against Borrowed Inference",
+  "upload_type": "publication",
+  "publication_type": "report",
+  "description": "<p>A detection engineering analysis of the AI-assisted intrusion published by Unit 42 on 2 September 2026, in which an unattributed ransom-motivated actor ran orchestrated LLM agents through more than fifty MITRE ATT&amp;CK techniques in under ten hours against an enterprise running its own AI services, ending by using stolen cloud keys to repurpose the victim's own inference endpoints as post-compromise infrastructure.</p><p><strong>The paper names two structural causes.</strong> The first is the <strong>coordination substrate</strong>. A single agent needs no coordination artifacts because its state is its context window; several agents do, because they do not share one. State that has to cross a process or session boundary is externalised, and in both published multi-agent corpora it was externalised to the filesystem: 1,395 files in a 160 MB workspace with lettered sub-agents and per-wave after-action reporting in the July 2026 Taiwan campaign, and structured Markdown files passing information between agents and sessions, paired asset folders and interpreter caches in this one. The two incidents share no operator, victim, motive, continent or indicator. The artifact class is their only overlap, and it is argued to be a consequence of multi-agent architecture rather than an implementation habit.</p><p>The second is <strong>borrowed inference</strong>: an attacker who compromises an estate operating AI workloads inherits its inference capability along with its data and compute, and that inference is indistinguishable from the estate's own by every network-layer control the estate owns. <strong>Section 5 is a published correction to the authors' own prior work.</strong> The provider-egress rules shipped as Tier 1 in 10.5281/zenodo.22033405 produce silence against this phase, because the destination sits inside the victim tenancy, allowlisted by construction and reached with a valid credential. The failure mode was anticipated in that paper's limitations and the mechanism was mis-specified: it was expected to arrive through operators self-hosting open-weight models, and it arrived in the next disclosed incident through operators using the victim's. The transferable lesson is that a detection keyed on a destination fails the moment the attacker acquires a legitimate instance of that destination, and that keying on identity does not have that failure mode.</p><p><strong>Section 3 argues that convergence is not confirmation.</strong> Unit 42's hunt guidance names bursty API requests, rapid 401 to 200 transitions, parallel authentications and sudden model usage from unexpected identities, which is recognisably the tempo model published thirteen days earlier in 10.5281/zenodo.22033405. Unit 42 published no interval data, no request rates and no latency measurements, so their list is guidance rather than telemetry, and the earlier paper's first falsification condition remains open. The paper argues explicitly that a third party citing both sources would count two independent confirmations of a tempo signature where there are zero.</p><p>Detections are ranked by durability rather than ease. Sections state what the class makes undetectable, including that the substrate is invisible whenever the agents execute outside the victim estate, which is roughly half the published corpus; what actually found the intrusion, which for the fourth consecutive paper in this series is not the defender's detection stack; four conditions that would falsify the argument; and what the authors are explicitly not claiming, including that Unit 42 corroborated the tempo model and that the two incidents share an operator.</p><p>Companion detection content covering Sigma, KQL and SPL is published at <a href=\"https://github.com/saluca-labs/detection-content\">saluca-labs/detection-content</a> under Apache-2.0.</p>",
+  "creators": [
+    {
+      "name": "Ruvalcaba, Cristian",
+      "affiliation": "Saluca LLC"
+    },
+    {
+      "name": "Saluca Agentic AI Research Team",
+      "affiliation": "Saluca LLC"
+    }
+  ],
+  "keywords": [
+    "detection engineering",
+    "agentic ai security",
+    "llm agents",
+    "multi-agent systems",
+    "resource hijacking",
+    "cloud security",
+    "identity-based detection",
+    "threat detection",
+    "sigma rules",
+    "blue team",
+    "incident response",
+    "ai security"
+  ],
+  "license": "cc-by-4.0",
+  "access_right": "open",
+  "version": "1.0",
+  "publication_date": "2026-09-09",
+  "communities": [
+    {
+      "identifier": "saluca"
+    }
+  ],
+  "related_identifiers": [
+    {
+      "identifier": "10.5281/zenodo.22033405",
+      "relation": "isNewVersionOf",
+      "resource_type": "publication-report",
+      "scheme": "doi"
+    },
+    {
+      "identifier": "10.5281/zenodo.22314504",
+      "relation": "references",
+      "resource_type": "publication-report",
+      "scheme": "doi"
+    },
+    {
+      "identifier": "10.5281/zenodo.21770780",
+      "relation": "references",
+      "resource_type": "publication-workingpaper",
+      "scheme": "doi"
+    },
+    {
+      "identifier": "10.5281/zenodo.21880001",
+      "relation": "references",
+      "resource_type": "publication-report",
+      "scheme": "doi"
+    },
+    {
+      "identifier": "https://unit42.paloaltonetworks.com/ai-assisted-cyber-attack-inside-a-unit-42-investigation/",
+      "relation": "isDerivedFrom",
+      "resource_type": "publication-report",
+      "scheme": "url"
+    },
+    {
+      "identifier": "https://github.com/saluca-labs/detection-content",
+      "relation": "isSupplementedBy",
+      "resource_type": "software",
+      "scheme": "url"
+    }
+  ],
+  "notes": "NOT YET DEPOSITED. This metadata is prepared and the deposit is left for the human author, per the standing gate that no agent creates or publishes a Zenodo deposit. Fourth in the consolidated series of detection engineering analyses from Saluca Labs published alongside the saluca-labs/detection-content repository. Each analysis is deposited separately with its own DOI; the detection content for all campaigns is consolidated in one repository. Report text is CC-BY-4.0; detection content and tooling are Apache-2.0 per the repository LICENSE. CORRECTION NOTICE: section 5 corrects a claim published by the same authors in 10.5281/zenodo.22033405, whose provider-egress rules were shipped as Tier 1 and produce silence against the borrowed-inference phase described here. The correction narrows the earlier claim rather than retracting it: those rules remain correct for the case they describe. DOI VERIFICATION: the related_identifiers above are concept DOIs. They could not be re-verified on 2026-09-08 because zenodo.org returned HTTP 504 to both the API and a browser-agent fetch; they were re-verified live on 2026-09-09 once the service recovered. 10.5281/zenodo.22033405, 10.5281/zenodo.22314504 and 10.5281/zenodo.21770780 each return a record whose conceptdoi equals the cited identifier, confirming all three are concept rather than version DOIs. 10.5281/zenodo.21880001 is also confirmed as the Borrowed Trust concept DOI, cross-checked from record 21880002 which reports it as its conceptdoi, and it resolves through doi.org; note that unlike the other three its bare record endpoints return 410 and 404 on the Zenodo API and website respectively, so verify it through doi.org or through its version record rather than by fetching the concept id directly. PROVENANCE: built from Unit 42's public account of 2 September 2026 and Dream's account of the July 2026 Taiwan campaign. The authors had no victim telemetry, no samples, no forensic artifacts and no contact with either affected organisation, reproduced nothing and detonated nothing. No rule in the companion package has been executed against telemetry from either incident; KQL and SPL are authored and not executed, and Sigma is schema-validated only. ATT&CK and ATLAS mappings are inferred; neither source supplied one. Prepared with AI assistance (Anthropic Claude). The coordination substrate synthesis, the borrowed inference naming, the convergence argument, the durability rankings, the falsification criteria and the limitations are authored and reviewed by the named human author, who is responsible for the claims."
+}

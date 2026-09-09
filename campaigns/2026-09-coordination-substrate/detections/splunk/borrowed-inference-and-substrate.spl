@@ -1,0 +1,182 @@
+* Splunk searches - borrowed inference, the coordination substrate, and the parallelism join.
+*
+* Written after Unit 42's 2 September 2026 account of an AI-assisted intrusion: roughly ten
+* hours, more than fifty ATT&CK techniques, ending with stolen cloud keys used to repurpose
+* the victim's OWN AI endpoints as post-compromise infrastructure.
+*
+* WHY THIS PACK EXISTS AT ALL
+* ---------------------------
+* The August 2026 agentic-intrusion pack shipped provider-egress as its Tier 1 control: a
+* server or restricted zone reaching api.openai.com, api.anthropic.com and friends. That rule
+* is correct and it produces SILENCE against this incident, because the destination was
+* inside the victim's own tenancy and allowlisted by construction.
+*
+* A detection keyed on a DESTINATION fails the moment the attacker acquires a legitimate
+* instance of that destination. Every search below asks WHO IS CALLING instead.
+*
+* AUTHORED, NOT EXECUTED. No telemetry from either incident is public. Nothing here has been
+* run against real data. Index names, sourcetypes and field names follow common conventions
+* and will need adjusting for your estate. Run each search interactively and tune it before
+* it is considered as an alert.
+*
+* Author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team, 2026-09-08
+* Ref: https://unit42.paloaltonetworks.com/ai-assisted-cyber-attack-inside-a-unit-42-investigation/
+* License: Apache-2.0
+
+
+* =========================================================================================
+* 0. BASELINE FIRST. Run this before anything else.
+*
+* Answers "which identities in my estate invoke inference, and how much". Most estates
+* cannot answer that question today, and you cannot detect an anomalous caller until you can
+* enumerate the normal ones. If this returns nothing, model-invocation logging is off and
+* the rest of this file is inert. Turning it on is the prerequisite, not an optimisation.
+* =========================================================================================
+index=cloud (sourcetype=aws:cloudtrail OR sourcetype=azure:activity OR sourcetype=gcp:audit)
+    (eventName IN ("InvokeModel","InvokeModelWithResponseStream") OR operationName="*ChatCompletions*" OR methodName="*predict*")
+| stats count AS invocations,
+        dc(eventName) AS distinct_ops,
+        min(_time) AS first_seen,
+        max(_time) AS last_seen
+    BY userIdentity.principalId, userIdentity.type, requestParameters.modelId
+| eval first_seen=strftime(first_seen,"%F %T"), last_seen=strftime(last_seen,"%F %T")
+| sort - invocations
+* KEEP THE OUTPUT. Save it as a lookup named inference_principal_baseline and refresh it
+* weekly. Search 1 depends on it.
+
+
+* =========================================================================================
+* 1. First-ever inference call by a principal. THE P1 DETECTION.
+*
+* The borrowed-inference control. Asked in the control plane, so it is indifferent to
+* provider, framework, model and network position: everything the operator can change for
+* free. This is the single most valuable search in this pack.
+* =========================================================================================
+index=cloud (eventName IN ("InvokeModel","InvokeModelWithResponseStream") OR operationName="*ChatCompletions*")
+    earliest=-24h
+| stats count AS invocations,
+        values(sourceIPAddress) AS src,
+        min(_time) AS first_call
+    BY userIdentity.principalId, requestParameters.modelId
+| lookup inference_principal_baseline principalId AS userIdentity.principalId OUTPUT invocations AS known_invocations
+| where isnull(known_invocations)
+| where invocations > 5
+| eval first_call=strftime(first_call,"%F %T")
+| sort - invocations
+* TRIAGE: a new workload going live looks identical. That is a question you should be able to
+* answer in a minute, not a false positive. If nobody can say which team owns the principal,
+* that IS the finding.
+
+
+* =========================================================================================
+* 2. Volume step change per principal.
+*
+* Catches what search 1 misses: a compromised identity that already calls the endpoint
+* legitimately. Borrowed inference at scale is resource abuse, the same shape as cryptomining
+* on stolen compute, with one difference that matters here. Mining is an anomalous workload
+* on general compute. Borrowed inference is the EXPECTED workload on the exact service built
+* to serve it. It looks like the product working, so volume and identity are all you have.
+* =========================================================================================
+index=cloud (eventName IN ("InvokeModel","InvokeModelWithResponseStream") OR operationName="*ChatCompletions*")
+    earliest=-14d
+| bin _time span=1h
+| stats count AS hourly BY _time, userIdentity.principalId
+| stats median(hourly) AS baseline, max(hourly) AS peak, count AS active_hours
+    BY userIdentity.principalId
+| eval baseline=if(baseline<1,1,baseline)
+| eval multiple=round(peak/baseline,1)
+| where multiple > 10 AND peak > 100 AND active_hours > 24
+| sort - multiple
+* TUNE: 10x, 100 and 24 are starting points reasoned from the shape of the incident, not
+* measured from it. Baseline your own estate first.
+
+
+* =========================================================================================
+* 3. Bulk secret read into first inference call, one principal, one hour.
+*
+* The Unit 42 privilege-to-abuse transition, expressed executably. This is the correlation
+* the Sigma rule in this pack can only describe.
+*
+* READ THE EXCEPTION NOTE. An AI workload reading its own provider key from a secrets manager
+* and then calling a model is correct, common, and indistinguishable from this at the event
+* level. The allowlist IS the deliverable. If you cannot enumerate the identities that are
+* supposed to do this, you cannot operate the search, and building that list has value on its
+* own.
+* =========================================================================================
+index=cloud earliest=-7d
+    (eventName IN ("GetSecretValue","BatchGetSecretValue","AccessSecretVersion")
+     OR operationName="*SecretGet*"
+     OR eventName IN ("InvokeModel","InvokeModelWithResponseStream")
+     OR operationName="*ChatCompletions*")
+| eval phase=case(
+      match(eventName,"Secret") OR match(operationName,"Secret"), "secret_read",
+      1=1, "inference")
+| bin _time span=1h
+| stats count(eval(phase=="secret_read"))  AS secret_reads,
+        count(eval(phase=="inference"))    AS inference_calls,
+        min(eval(if(phase=="secret_read",_time,null()))) AS first_secret,
+        min(eval(if(phase=="inference",_time,null())))   AS first_inference
+    BY _time, userIdentity.principalId
+| where secret_reads > 10 AND inference_calls > 0 AND first_inference > first_secret
+| eval first_secret=strftime(first_secret,"%F %T"), first_inference=strftime(first_inference,"%F %T")
+| sort - secret_reads
+* | search NOT userIdentity.principalId IN ("<your-known-ai-workload-principals>")
+
+
+* =========================================================================================
+* 4. The parallelism join. Failed-to-successful transitions WITH divergent concurrent action.
+*
+* Unit 42 names "rapid 401/200 HTTP state shifts" and "parallel authentications". The
+* transition rate alone is a credential-spray signal your existing detections already carry
+* and this search would be redundant if that were all it did.
+*
+* THE JOIN IS THE CONTRIBUTION: multiple concurrent sessions on ONE credential performing
+* DIFFERENT actions. A spray tool repeats one action widely. An agent swarm divides the work.
+* Parallelism with divergence is the discriminator, and it is not speed.
+*
+* HONESTY: this is unmeasured, by us and by Unit 42, whose list is hunt guidance rather than
+* telemetry. Two independent teams proposing the same primitive is not two confirmations of
+* it. Read section 3 of the paper before treating this as validated.
+* =========================================================================================
+index=auth earliest=-7d
+| bin _time span=10m
+| stats count(eval(status=="failure")) AS failures,
+        count(eval(status=="success")) AS successes,
+        dc(app) AS distinct_apps,
+        dc(src_ip) AS distinct_src,
+        values(app) AS apps
+    BY _time, user
+| where failures > 5 AND successes > 0
+| where distinct_apps > 2
+| eval shape=failures." failed, then ".successes." succeeded across ".distinct_apps." apps"
+| table _time, user, shape, distinct_src, apps
+| sort - failures
+
+
+* =========================================================================================
+* 5. Coordination substrate on server-class hosts.
+*
+* HUNTING ONLY, and the most vantage-limited search here. It fires when the agents run on
+* YOUR machines, which is the Unit 42 case. In the Taiwan case they ran on the operator's and
+* a defender saw authentication activity and nothing else. Roughly half the published corpus
+* is out of reach of this search and stakeholders should be told so.
+*
+* The signal is the conjunction. Never the file extension on its own.
+* =========================================================================================
+index=endpoint sourcetype=sysmon EventCode=11 earliest=-7d
+| search host IN ("SRV*","APP*","DC*","JMP*")
+| where match(TargetFilename,"\.(md|jsonl|ya?ml)$")
+     OR match(TargetFilename,"__pycache__")
+     OR match(TargetFilename,"\.(hermes|openclaw)")
+| bin _time span=5m
+| stats dc(TargetFilename) AS files,
+        values(Image) AS writer,
+        min(_time) AS started, max(_time) AS ended
+    BY _time, host, ProcessId
+| where files > 40
+| eval burst_seconds=ended-started
+| eval rate=round(files/(if(burst_seconds<1,1,burst_seconds)),2)
+| sort - files
+* TRIAGE: static site builds, report generation, config management and cache warming all look
+* like this. Allowlist by writer image first. Then correlate a survivor against search 4 for
+* the same host in the same window. A build job does not authenticate; an operation does.
