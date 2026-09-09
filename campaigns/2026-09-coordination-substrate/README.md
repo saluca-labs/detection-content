@@ -6,7 +6,8 @@ repurposing the victim's own AI endpoints.
 
 Defensive only. Apache-2.0. Part of [saluca-labs/detection-content](https://github.com/saluca-labs/detection-content).
 
-**Paper:** `coordination-substrate-v1.0.md` (deposit pending, not yet published)
+**Paper:** [The Coordination Substrate: A Detection Engineering Analysis of the September 2026 Unit 42 Agentic Intrusion, and Why Provider-Egress Detection Fails Against Borrowed Inference](https://doi.org/10.5281/zenodo.22678061) - [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22678061.svg)](https://doi.org/10.5281/zenodo.22678061)
+Local copies: [`coordination-substrate-v1.0.pdf`](coordination-substrate-v1.0.pdf) - [`.md`](coordination-substrate-v1.0.md)
 **Predecessor:** [Agentic Intrusion](../2026-08-agentic-intrusion/) - [10.5281/zenodo.22033405](https://doi.org/10.5281/zenodo.22033405)
 
 ---

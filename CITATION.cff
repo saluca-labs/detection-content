@@ -9,8 +9,8 @@ authors:
   - name: "Saluca Agentic AI Research Team"
 repository-code: "https://github.com/saluca-labs/detection-content"
 license: Apache-2.0
-version: "1.1.0"
-date-released: 2026-09-04
+version: "1.2.0"
+date-released: 2026-09-09
 abstract: >-
   Detection engineering content for public threat campaigns, published one pack per
   campaign under a single growing citation. Each pack states what it cannot detect before
@@ -36,3 +36,7 @@ references:
     title: "Asserted Egress: A Detection Engineering Analysis of the May to July 2026 Agent Wiki Collusion, and the Vantage Problem in Containment Monitoring"
     doi: "10.5281/zenodo.22314504"
     notes: "Companion analysis for campaigns/2026-09-agent-collusion. Concept DOI, published and verified resolving 2026-09-04; 10.5281/zenodo.22314505 is the version DOI."
+  - type: report
+    title: "The Coordination Substrate: A Detection Engineering Analysis of the September 2026 Unit 42 Agentic Intrusion, and Why Provider-Egress Detection Fails Against Borrowed Inference"
+    doi: "10.5281/zenodo.22678061"
+    notes: "Companion analysis for campaigns/2026-09-coordination-substrate. Concept DOI, READ off the published record on 2026-09-09 rather than inferred from the version DOI; 10.5281/zenodo.22678062 is the version DOI."
