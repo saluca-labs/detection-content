@@ -11,7 +11,7 @@
 #   Unit 42:         "Structured Markdown files passing information between agents and
 #                    sessions", paired asset folders, Python caches, an 80-page audit.
 #
-# Different operator, different victim, different motive, one month apart, no shared
+# Different operator, different victim, different motive, disclosed three weeks apart, no shared
 # indicator of any kind. This artifact class is the only overlap.
 #
 # THE SIGNAL IS THE CONJUNCTION, NOT THE FILE TYPE. Markdown files and __pycache__ are

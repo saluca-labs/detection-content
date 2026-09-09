@@ -30,7 +30,8 @@ agents do, because they do not share one. State that has to cross a process or s
 written down.
 
 Set the two published corpora side by side and nothing matches. Different operator, different victim,
-different motive, different continent, one month apart, no shared indicator of any kind. Except this:
+different motive, different continent, disclosed three weeks apart, no shared indicator of any kind.
+Except this:
 
 | Taiwan, July 2026 (Dream) | Enterprise, September 2026 (Unit 42) |
 |---|---|
@@ -113,7 +114,7 @@ Say all of this to your stakeholders before they assume coverage.
 ## Convergence is not confirmation
 
 Our August pack published a tempo model: machine-speed bursts separated by inference-latency pauses,
-with technique change after failure. Three weeks later Unit 42 recommended hunting for "bursty API
+with technique change after failure. Thirteen days later Unit 42 recommended hunting for "bursty API
 requests, rapid 401/200 HTTP state shifts, parallel authentications and sudden model usage from
 unexpected identities."
 

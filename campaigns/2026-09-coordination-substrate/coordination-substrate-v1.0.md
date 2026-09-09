@@ -2,7 +2,7 @@
 
 **Cristian Ruvalcaba and the Saluca Agentic AI Research Team, Saluca LLC**
 
-Version 1.0 - 8 September 2026 - current to 8 September 2026
+Version 1.0 - 9 September 2026 - current to 9 September 2026
 
 Fourth in the consolidated detection engineering series. Direct successor to *Agentic Intrusion*
 (concept DOI 10.5281/zenodo.22033405), whose Tier 1 claims this paper tests and, in one respect,
@@ -32,7 +32,7 @@ reason we anticipated in outline and mis-specified in mechanism.
 
 ## 1. The defender question nobody is answering
 
-Three weeks after we published a tempo model for agent-driven intrusion, an independent investigator
+Thirteen days after we published a tempo model for agent-driven intrusion, an independent investigator
 published hunt guidance naming the same signals, and described a phase of the same class of
 intrusion that defeats the other half of what we shipped.
 
