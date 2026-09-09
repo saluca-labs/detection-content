@@ -96,18 +96,47 @@ CONTENT consolidates; the CITATIONS do not.
    `upload_type: publication`, `publication_type: report`, `license: cc-by-4.0` for the
    report text, and state in `notes` that the detection content is Apache-2.0, because one
    licence field cannot express both.
-2. Deposit and upload the paper PDF, the paper markdown, and the repository source archive:
+2. Render the paper PDF. **Give the builder an ABSOLUTE path**: it runs pandoc with `cwd` set
+   to the markdown's parent while passing a relative output path, so a relative invocation
+   writes the PDF into a nested `campaigns/<slug>/campaigns/<slug>/` directory, returns 0, and
+   then dies on `stat()` of a file that is not where it looked. It reads like a pandoc failure
+   and is not one.
 
    ```bash
-   git archive --format=zip --prefix=detection-content-vN/ -o <out>.zip vN
-   python zenodo_deposit.py \n       --metadata campaigns/<slug>/.zenodo.json \n       --file <paper>.pdf --file <paper>.md --file <out>.zip
+   python C:/AI/daily-brief/papers/build_pdf.py --file C:/absolute/path/to/<paper>.md --force
+   ```
+
+3. Deposit. The script takes the campaign slug and finds everything else itself: it reads
+   `campaigns/<slug>/.zenodo.json`, uploads the paper markdown, the paper PDF and a source
+   archive it builds, and stops.
+
+   ```bash
+   python tools/zenodo_deposit.py <slug>
+   python tools/zenodo_deposit.py <slug> --no-archive
+   python tools/zenodo_deposit.py <slug> --deposition 1234567   # update an existing draft
    ```
 
    The script creates a DRAFT and stops. **Publishing is a human action**, because a DOI is
    permanent.
-3. Cross-reference in `.zenodo.json` via `related_identifiers`: `isPartOf` the previous
+
+   **Always let Zenodo mint the DOI, and always reserve one** (decision, Cristian, 2026-09-09).
+   The script sets `prereserve_doi` and never writes `metadata.doi`, and it refuses to run if
+   `.zenodo.json` supplies a `doi` of its own. Those are two different things and the upload
+   form blurs them, so keep them straight:
+
+   - `metadata.doi` set means "this resource already has a DOI from another publisher", and
+     Zenodo will then **not** mint one. We never want that.
+   - `prereserve_doi` means "allocate my number now so I can cite it before I publish". The
+     form may render a reserved DOI in a way that reads as already assigned. It is not.
+     Borrowed Trust used the reservation deliberately, shipping a public code companion that
+     cited the DOI back before the deposit went live.
+
+   Do not add a flag to skip the reservation. Reserving costs nothing, and the alternative
+   breaks the pattern where the repository and the paper reference each other.
+4. Cross-reference in `.zenodo.json` via `related_identifiers`: `isPartOf` the previous
    analysis DOI, `isSupplementedBy` the repository URL.
-4. After publishing, add the **concept** DOI (not the version DOI) to the campaign README,
+5. After publishing, **read the concept DOI off the published record rather than inferring
+   it from the version DOI**, then add the **concept** DOI to the campaign README,
    the root README table, and `CITATION.cff`. The concept DOI resolves to the newest
    revision of that paper.
 
