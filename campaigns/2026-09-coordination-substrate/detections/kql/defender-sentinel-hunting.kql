@@ -1,0 +1,178 @@
+// KQL for Microsoft Defender XDR and Sentinel - borrowed inference and the coordination
+// substrate.
+//
+// DEFENDER VANTAGE throughout. Everything here assumes the agents ran inside your estate,
+// which is the Unit 42 case. In the Taiwan case the agents ran on the operator's
+// infrastructure and none of this would have fired. Section 4.4 of the paper.
+//
+// Written after Unit 42's 2 September 2026 account of an AI-assisted intrusion: roughly ten
+// hours, 50+ ATT&CK techniques, ending with stolen cloud keys used to repurpose the victim's
+// OWN AI endpoints as post-compromise infrastructure.
+//
+// Author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team, 2026-09-08
+// Ref: https://unit42.paloaltonetworks.com/ai-assisted-cyber-attack-inside-a-unit-42-investigation/
+// License: Apache-2.0
+//
+// AUTHORED, NOT EXECUTED. There is no tenant behind these queries. Table and column names
+// follow the documented schemas but have not been run. Expect to fix at least one field name
+// per query and budget for it.
+//
+// PREREQUISITE, AND IT IS THE BINDING ONE. Queries 1, 2 and 3 need Azure OpenAI diagnostic
+// logging enabled and routed to a workspace. It is OFF by default. If you have not turned it
+// on, borrowed inference is invisible in your estate and no query below will help you.
+
+
+// =========================================================================================
+// 1. Model endpoint invoked by a principal that has never invoked it. The P1 detection.
+//
+// This is the whole borrowed-inference control. It is asked in the control plane, so it does
+// not care which provider, which framework, which model, or where on the network the caller
+// sits. It survives everything the operator can change for free.
+//
+// Thirty days of history is the baseline. Shorter and every principal looks novel after the
+// window rolls, which turns the query into a noise generator.
+// =========================================================================================
+let lookback = 30d;
+let known =
+    AzureDiagnostics
+    | where TimeGenerated between (ago(lookback) .. ago(1d))
+    | where ResourceProvider =~ "MICROSOFT.COGNITIVESERVICES"
+    | where OperationName has_any ("ChatCompletions_Create", "Completions_Create", "Embeddings_Create")
+    | summarize by CallerIdentity = tostring(properties_callerIdentity_s), Resource;
+AzureDiagnostics
+| where TimeGenerated > ago(1d)
+| where ResourceProvider =~ "MICROSOFT.COGNITIVESERVICES"
+| where OperationName has_any ("ChatCompletions_Create", "Completions_Create", "Embeddings_Create")
+| extend CallerIdentity = tostring(properties_callerIdentity_s)
+| join kind=leftanti known on CallerIdentity, Resource
+| summarize Calls = count(), FirstSeen = min(TimeGenerated), LastSeen = max(TimeGenerated)
+    by CallerIdentity, Resource, CallerIPAddress
+| where Calls > 5          // a single exploratory call is usually a human clicking something
+| order by Calls desc
+// TRIAGE: a new workload going live looks exactly like this. That is not a false positive so
+// much as a question you should be able to answer in under a minute. If you cannot say which
+// team owns CallerIdentity, that is the finding.
+
+
+// =========================================================================================
+// 2. Step change in inference volume per principal.
+//
+// Catches the case query 1 misses, where the compromised identity is one that legitimately
+// calls the endpoint already. Borrowed inference at scale is a resource-abuse pattern and it
+// shows up as volume, in the same shape cryptomining does on general compute.
+//
+// The difference worth internalising: mining is an anomalous workload on general compute.
+// Borrowed inference is the EXPECTED workload on the exact service built to serve it. It
+// looks like the product working, which is why volume and identity are all you have.
+// =========================================================================================
+AzureDiagnostics
+| where TimeGenerated > ago(14d)
+| where ResourceProvider =~ "MICROSOFT.COGNITIVESERVICES"
+| where OperationName has_any ("ChatCompletions_Create", "Completions_Create")
+| extend CallerIdentity = tostring(properties_callerIdentity_s)
+| summarize Calls = count() by CallerIdentity, Resource, bin(TimeGenerated, 1h)
+| summarize
+      Baseline = percentile(Calls, 50),
+      Peak     = max(Calls),
+      PeakAt   = arg_max(Calls, TimeGenerated)
+    by CallerIdentity, Resource
+| extend Multiple = todouble(Peak) / todouble(max_of(Baseline, 1))
+| where Multiple > 10 and Peak > 100
+| order by Multiple desc
+// TUNE: the 10x and the floor of 100 are starting points, not measurements. Nothing here has
+// been run against telemetry from the incident, because none is public.
+
+
+// =========================================================================================
+// 3. Secrets read followed by first inference call, same principal, same hour.
+//
+// The Unit 42 chain compressed into one query: privilege phase into resource-abuse phase.
+//
+// Read the false-positive note before deploying. An AI workload reading its own provider key
+// from Key Vault and then calling a model is a correct and extremely common pattern. The
+// exception list IS the deliverable: if you cannot enumerate which identities are supposed to
+// do this, you cannot run the rule, and building the list is worth doing regardless.
+// =========================================================================================
+let window = 1h;
+let secrets =
+    AzureDiagnostics
+    | where TimeGenerated > ago(7d)
+    | where ResourceProvider =~ "MICROSOFT.KEYVAULT"
+    | where OperationName in ("SecretGet", "SecretList")
+    | extend Principal = tostring(identity_claim_oid_g)
+    | summarize SecretReads = count(), SecretAt = max(TimeGenerated) by Principal, bin(TimeGenerated, window);
+let inference =
+    AzureDiagnostics
+    | where TimeGenerated > ago(7d)
+    | where ResourceProvider =~ "MICROSOFT.COGNITIVESERVICES"
+    | extend Principal = tostring(properties_callerIdentity_s)
+    | summarize InferenceCalls = count(), InferenceAt = min(TimeGenerated) by Principal, bin(TimeGenerated, window);
+secrets
+| join kind=inner inference on Principal, TimeGenerated
+| where InferenceAt > SecretAt
+| where SecretReads > 10          // bulk read, not a single startup fetch
+| project TimeGenerated, Principal, SecretReads, SecretAt, InferenceCalls, InferenceAt
+| order by SecretReads desc
+
+
+// =========================================================================================
+// 4. Coordination substrate: structured state files at machine cadence on a server.
+//
+// HUNTING, NOT ALERTING, and the most vantage-limited query in this file.
+//
+// The signal is the conjunction, never the file type on its own. Markdown and __pycache__
+// are everywhere. What is not everywhere is a service-context process writing dozens of
+// structured state files in minutes on a host where nobody develops.
+// =========================================================================================
+let servers = DeviceInfo
+    | where TimeGenerated > ago(7d)
+    | where DeviceType != "Workstation"
+    | distinct DeviceId;
+DeviceFileEvents
+| where Timestamp > ago(7d)
+| where DeviceId in (servers)
+| where ActionType in ("FileCreated", "FileModified")
+| where FileName endswith ".md" or FileName endswith ".jsonl"
+    or FolderPath has "__pycache__"
+    or FolderPath has_any (".hermes", ".openclaw", "agent_workspace")
+| where InitiatingProcessFileName in~ ("python.exe", "node.exe", "uv.exe", "uvx.exe", "w3wp.exe", "java.exe")
+| summarize Files = dcount(FolderPath), Sample = make_set(FileName, 8),
+            Started = min(Timestamp), Ended = max(Timestamp)
+    by DeviceId, DeviceName, InitiatingProcessFileName, InitiatingProcessId, bin(Timestamp, 5m)
+| where Files > 40
+| extend BurstSeconds = datetime_diff('second', Ended, Started)
+| order by Files desc
+// TRIAGE: static site builds, report generators, config management and cache warming all
+// look like this. Expect to allowlist several by InitiatingProcessFileName and folder before
+// this is usable. Correlate a survivor against authentication activity from the same host in
+// the same window; that pairing is what separates a build job from an operation.
+
+
+// =========================================================================================
+// 5. Failed-to-successful authentication transitions with concurrent parallel sessions.
+//
+// Unit 42 names "rapid 401/200 HTTP state shifts" and "parallel authentications". On its own
+// the transition rate is a credential-spray signal your existing detections already carry.
+//
+// The JOIN is what is ours and what matters: multiple concurrent sessions on one credential
+// performing DIFFERENT actions. Spray tools repeat one action widely. Agent swarms divide the
+// work. Parallelism with divergence is the discriminator, not speed.
+//
+// HONESTY NOTE: this has not been measured, by us or by Unit 42, whose list is hunt guidance
+// rather than telemetry. Section 3 of the paper is about exactly this and should be read
+// before anyone treats the query as validated.
+// =========================================================================================
+SigninLogs
+| where TimeGenerated > ago(7d)
+| extend Outcome = iff(ResultType == "0", "success", "failure")
+| summarize
+      Failures  = countif(Outcome == "failure"),
+      Successes = countif(Outcome == "success"),
+      DistinctApps = dcount(AppDisplayName),
+      DistinctIPs  = dcount(IPAddress),
+      Apps = make_set(AppDisplayName, 10)
+    by UserPrincipalName, bin(TimeGenerated, 10m)
+| where Failures > 5 and Successes > 0     // the transition
+| where DistinctApps > 2                   // divergence: not one action repeated
+| extend TransitionShape = strcat(Failures, " failed then ", Successes, " succeeded across ", DistinctApps, " apps")
+| order by Failures desc

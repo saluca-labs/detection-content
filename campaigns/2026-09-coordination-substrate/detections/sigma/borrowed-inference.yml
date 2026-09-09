@@ -1,0 +1,135 @@
+# Sigma - borrowed inference. The case that defeats every provider-egress rule we shipped
+# in August, including our own.
+#
+# Unit 42's fifth stage: stolen cloud keys used to repurpose THE VICTIM'S OWN AI endpoints as
+# post-compromise infrastructure. In that configuration the destination is inside the
+# victim's tenancy, it is allowlisted by construction because the victim runs AI services
+# deliberately, the traffic need not cross the monitored perimeter, and the credential is
+# valid. The August package's llm-api-egress-from-server.yml and its proxy companion both
+# fail to SILENCE, not to a tunable false negative: the destination they key on is never
+# contacted.
+#
+# We predicted this failure mode in the August limitations and got the mechanism wrong. We
+# expected it to arrive through operators self-hosting open-weight models. It arrived in the
+# very next disclosed incident, through operators using the victim's.
+#
+# THE LESSON GENERALISES PAST THIS PACK: a detection keyed on a DESTINATION fails the moment
+# the attacker acquires a legitimate instance of that destination. Keying on IDENTITY does
+# not have that failure mode, which is why every rule in this file asks who is calling
+# rather than what is being called.
+#
+# WHERE THIS WORKS: cloud model-invocation logs. Azure OpenAI diagnostic logs, Bedrock model
+# invocation logging, Vertex AI audit logs. All three are OFF or partial by default in most
+# tenancies. If you do not turn them on, none of this is instrumentable, and that is the
+# single most consequential prerequisite in this pack.
+#
+# Ref: https://unit42.paloaltonetworks.com/ai-assisted-cyber-attack-inside-a-unit-42-investigation/
+# Author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team, 2026-09-08
+
+title: Model Inference Endpoint Invoked By A Principal With No Invocation History
+id: 0aaae369-7ad1-446b-8d75-ec82636febc5
+status: experimental
+description: |
+  A cloud identity invoked a managed model inference endpoint for the first time. This is
+  the borrowed-inference control and it is the highest-value rule in this pack, because it
+  is asked in the control plane and is therefore immune to provider choice, framework
+  choice, network position and any amount of TLS.
+
+  The question deliberately is NOT "did a server talk to a model provider". It is "has this
+  principal ever invoked this endpoint before, and did its rate just change by an order of
+  magnitude". A service principal whose job is document processing calling an inference
+  endpoint for the first time, at volume, is the entire finding.
+
+  IMPLEMENTATION NOTE. Sigma cannot express "first time ever" on its own; the
+  first_invocation_by_principal field below is expected to be enriched upstream, by a lookup
+  against a maintained baseline of principal-to-endpoint pairs. The equivalent KQL and SPL
+  in this pack compute it inline and are the more practical starting point. This rule is the
+  portable statement of the logic.
+references:
+    - https://unit42.paloaltonetworks.com/ai-assisted-cyber-attack-inside-a-unit-42-investigation/
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-09-08
+tags:
+    - attack.impact
+    - attack.t1496
+    - attack.defense-evasion
+    - attack.t1078.004
+    - atlas.aml-t0051
+logsource:
+    product: cloud
+    service: model_invocation
+detection:
+    invocation:
+        eventName|contains:
+            - 'InvokeModel'
+            - 'InvokeModelWithResponseStream'
+            - 'ChatCompletions'
+            - 'Completions'
+            - 'GenerateContent'
+            - 'Predict'
+    # Enriched upstream. See the implementation note above.
+    novel_principal:
+        first_invocation_by_principal: true
+    # Human interactive sessions are a different question and a noisier one.
+    exclude_interactive:
+        principalType: 'User'
+    condition: invocation and novel_principal and not exclude_interactive
+falsepositives:
+    - A genuine new workload going live. This is the common case and it is the reason the
+      rule is worth having. You should know when a new identity starts consuming inference,
+      and if you do not, that is the finding rather than the false positive.
+    - Deployment automation invoking a model as a smoke test after a release.
+    - Baseline gaps. If the enrichment lookup has a short retention window, every principal
+      looks novel after the window rolls. Confirm the baseline covers at least 30 days.
+level: high
+---
+title: Secrets Manager Bulk Read Followed By Model Endpoint Invocation
+id: 9bee228a-63bf-452a-b08b-89ed1f4445b4
+status: experimental
+description: |
+  The Unit 42 chain in two events: sub-agents harvested hardcoded credentials, the secrets
+  management system was compromised for root administrative credentials, and stolen cloud
+  keys were then used against the victim's own AI endpoints.
+
+  Either half alone is ambiguous. A bulk secret read is what deployment automation does. A
+  model invocation is what an AI product does. The sequence, by one principal, inside a short
+  window, is not a normal shape, and it is the transition from the privilege phase to the
+  resource-abuse phase.
+
+  Correlation rule. It needs a SIEM that can join two event classes on principal within a
+  window; the SPL in this pack expresses the same logic executably.
+references:
+    - https://unit42.paloaltonetworks.com/ai-assisted-cyber-attack-inside-a-unit-42-investigation/
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-09-08
+tags:
+    - attack.credential-access
+    - attack.t1555.006
+    - attack.impact
+    - attack.t1496
+logsource:
+    product: cloud
+    service: audit
+detection:
+    secret_read:
+        eventName|contains:
+            - 'GetSecretValue'
+            - 'BatchGetSecretValue'
+            - 'SecretGet'
+            - 'AccessSecretVersion'
+            - 'VaultSecretRead'
+    model_invocation:
+        eventName|contains:
+            - 'InvokeModel'
+            - 'ChatCompletions'
+            - 'GenerateContent'
+    timeframe: 60m
+    condition: secret_read and model_invocation | count() by principalId > 1
+falsepositives:
+    - An AI workload that legitimately reads its own provider key from a secrets manager on
+      startup and then calls a model. This is a very common and entirely correct pattern, so
+      allowlist those principals explicitly by name. The exception list is the deliverable
+      here. If you cannot enumerate which identities are supposed to do this, you cannot
+      operate the rule, and the enumeration is worth the effort on its own.
+    - Deployment pipelines that rotate keys and then run an integration test.
+level: medium

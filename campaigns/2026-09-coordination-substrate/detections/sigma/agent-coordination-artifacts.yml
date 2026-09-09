@@ -1,0 +1,164 @@
+# Sigma - the coordination substrate on disk.
+#
+# A single agent needs no coordination artifacts; its state is its context window. Several
+# agents do, because they do not share one. State that has to survive a process boundary or
+# a session boundary gets externalised, and in both published corpora it was externalised to
+# the filesystem.
+#
+#   Taiwan (Dream):  1,395 files in a 160 MB workspace, .hermes and .openclaw workspace
+#                    directories, sub-agents lettered A through Q, structured after-action
+#                    reporting between the twelve waves.
+#   Unit 42:         "Structured Markdown files passing information between agents and
+#                    sessions", paired asset folders, Python caches, an 80-page audit.
+#
+# Different operator, different victim, different motive, one month apart, no shared
+# indicator of any kind. This artifact class is the only overlap.
+#
+# THE SIGNAL IS THE CONJUNCTION, NOT THE FILE TYPE. Markdown files and __pycache__ are
+# everywhere. What is not everywhere is structured state files created at machine cadence by
+# a non-interactive process on a host where nobody develops. Any rule here keyed on file
+# type alone would be noise, which is why the cadence and the parent process carry the
+# weight.
+#
+# VANTAGE LIMIT, AND IT IS SEVERE. These rules fire only when the agents execute on YOUR
+# hosts. That is the Unit 42 case. In the Taiwan case the workspace was on the operator's
+# infrastructure and a defender saw authentication activity and nothing else. Roughly half
+# the published corpus is out of reach of this file. Say that to stakeholders before they
+# assume coverage.
+#
+# HUNTING, NOT ALERTING. Both rules below are informational by design.
+#
+# Refs: https://unit42.paloaltonetworks.com/ai-assisted-cyber-attack-inside-a-unit-42-investigation/
+#       https://www.dreamgroup.com/blog/inside-a-multi-agent-ai-framework-used-to-compromise-government-entities-in-asia
+# Author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team, 2026-09-08
+
+title: Agent Workspace Directory Created On A Non-Developer Host
+id: a95d590c-7486-425e-84a1-d9ae3c62877d
+status: experimental
+description: |
+  Creation of a directory used by an LLM agent framework to hold per-run working state.
+  Hermes and OpenClaw were the two frameworks in the July 2026 Taiwan campaign and both
+  keep a workspace of exactly this shape; the others are listed because the technique is
+  framework-agnostic and an operator picks whichever is convenient.
+
+  The finding is not the framework. The finding is a framework workspace materialising on a
+  host with no developer workflow: a file server, a domain controller, a jump host, an
+  application server, a build agent that is not supposed to be interactive.
+
+  This is a HUNTING rule. On an engineer's laptop it is expected and constant.
+references:
+    - https://unit42.paloaltonetworks.com/ai-assisted-cyber-attack-inside-a-unit-42-investigation/
+    - https://www.dreamgroup.com/blog/inside-a-multi-agent-ai-framework-used-to-compromise-government-entities-in-asia
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-09-08
+tags:
+    - attack.execution
+    - attack.discovery
+    - atlas.aml-t0051
+logsource:
+    category: file_event
+    product: windows
+detection:
+    workspace_dirs:
+        TargetFilename|contains:
+            - '\.hermes\'
+            - '\.openclaw\'
+            - '\.agents\workspace\'
+            - '\.crew\'
+            - '\.autogen\'
+            - '\agent_workspace\'
+            - '/.hermes/'
+            - '/.openclaw/'
+            - '/agent_workspace/'
+    # Non-interactive parents. An agent framework launched by a web server, a scheduler or a
+    # service host is the case worth looking at; one launched by a shell a person is sitting
+    # at usually is not.
+    non_interactive_parent:
+        ParentImage|endswith:
+            - '\w3wp.exe'
+            - '\httpd.exe'
+            - '\nginx.exe'
+            - '\java.exe'
+            - '\node.exe'
+            - '\python.exe'
+            - '\svchost.exe'
+            - '\services.exe'
+            - '\sqlservr.exe'
+    condition: workspace_dirs and non_interactive_parent
+falsepositives:
+    - Developer workstations and CI runners, continuously. Scope by host role rather than
+      attempting to enumerate exceptions.
+    - Saluca runs a Hermes fork internally. Any deployment inside our own estate must
+      allowlist the known install paths first and record why in the exception.
+    - Legitimate agent workloads deployed to servers on purpose. If you have those, this
+      rule tells you where they are, which is worth knowing on its own.
+level: informational
+---
+title: Structured State Files Written At Machine Cadence By A Service Process
+id: 9ec44392-29a3-4c82-bac4-d10c38d5f201
+status: experimental
+description: |
+  Rapid creation of structured, cross-referencing state files by a process running in a
+  service or web context. This is the coordination substrate itself rather than the
+  framework that produced it, so it survives the operator changing framework, model and
+  provider, which is the property that makes it worth carrying.
+
+  Unit 42 observed "structured Markdown files passing information between agents and
+  sessions" alongside Python caches and paired asset folders. Dream recovered 1,395 files
+  including per-wave after-action reports. Neither published a file naming convention, so
+  this keys on extension plus cadence plus parent context and nothing more specific.
+
+  TUNE THE CADENCE FIRST. The threshold below is a starting point, not a measurement. No
+  telemetry from either incident is public and nothing here has been run against real data.
+  Baseline your own estate before enabling this as anything other than a hunt.
+references:
+    - https://unit42.paloaltonetworks.com/ai-assisted-cyber-attack-inside-a-unit-42-investigation/
+    - https://www.dreamgroup.com/blog/inside-a-multi-agent-ai-framework-used-to-compromise-government-entities-in-asia
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-09-08
+tags:
+    - attack.execution
+    - attack.collection
+    - attack.t1074.001
+    - atlas.aml-t0051
+logsource:
+    category: file_event
+    product: windows
+detection:
+    state_files:
+        TargetFilename|endswith:
+            - '.md'
+            - '.jsonl'
+            - '.yaml'
+            - '.yml'
+    interpreter_cache:
+        TargetFilename|contains:
+            - '\__pycache__\'
+            - '/__pycache__/'
+    service_context:
+        Image|endswith:
+            - '\python.exe'
+            - '\node.exe'
+            - '\uv.exe'
+            - '\uvx.exe'
+            - '\w3wp.exe'
+            - '\java.exe'
+    # Hosts where a person writing notes is not a plausible explanation. Replace with your
+    # own server naming convention. Left explicit because this is the line a deploying
+    # engineer MUST edit.
+    server_host:
+        Computer|startswith:
+            - 'SRV'
+            - 'APP'
+            - 'DC'
+            - 'JMP'
+    timeframe: 5m
+    condition: server_host and service_context and (state_files or interpreter_cache) | count(TargetFilename) > 40
+falsepositives:
+    - Application logging, cache warming, report generation and static site builds all write
+      structured files quickly. Expect to allowlist several by image path before this is
+      usable.
+    - CI and build agents. If your build estate matches the server naming prefix above, this
+      will fire constantly until you separate the two.
+    - Configuration management runs that template YAML at scale.
+level: informational
