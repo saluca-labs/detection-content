@@ -1,0 +1,90 @@
+# Sigma - internet-to-OT sessions on industrial protocol ports
+#
+# CISA AA26-097A reports Iranian-affiliated actors (the advisory's attribution) exploiting
+# internet-exposed PLCs: Rockwell/Allen-Bradley CompactLogix and Micro850, Schneider Modicon
+# M340, Siemens S7-1200. The ports it lists are 44818 (EtherNet/IP), 2222 (EtherNet/IP implicit
+# messaging), 102 (S7comm / ISO-TSAP), 502 (Modbus/TCP), and 22 on modems.
+#
+# The rule keys on the architecture, not the actor. An inbound session from the internet to a
+# PLC is a failure whoever sends it, so this survives any infrastructure rotation. That is
+# why it ranks first.
+#
+# It does NOT catch access through a compromised remote-access gateway or VPN. That traffic
+# arrives from an internal address and looks like the engineer it impersonates.
+#
+# Ref: https://www.cisa.gov/news-events/cybersecurity-advisories/aa26-097a
+# Author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team, 2026-09-16
+
+title: Inbound Internet Session To Industrial Protocol Port
+id: 4456965f-f834-4368-a5ec-533c4789684c
+status: experimental
+description: |
+  A permitted or attempted inbound connection from a non-private address to an industrial
+  protocol port (EtherNet/IP 44818 and 2222, S7comm 102, Modbus 502). CISA AA26-097A reports
+  this exposure being exploited against US critical infrastructure. Scope dst_ip to your OT
+  ranges before enabling. Unscoped, port 102 and 2222 collide with unrelated services.
+references:
+    - https://www.cisa.gov/news-events/cybersecurity-advisories/aa26-097a
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-09-16
+tags:
+    - attack.initial-access
+    - attack.t0883
+    - attack.t0885
+logsource:
+    category: firewall
+detection:
+    ot_ports:
+        dst_port:
+            - 44818
+            - 2222
+            - 102
+            - 502
+    private_src:
+        src_ip|cidr:
+            - '10.0.0.0/8'
+            - '172.16.0.0/12'
+            - '192.168.0.0/16'
+            - '127.0.0.0/8'
+            - '169.254.0.0/16'
+            - '100.64.0.0/10'
+    condition: ot_ports and not private_src
+falsepositives:
+    - Vendor remote-support links deliberately published to the internet. These are the exposure CISA warns about, so treat the allowlist entry as a finding in its own right.
+    - Port 2222 is also a common alternate SSH port. Scope dst_ip to OT subnets to remove the collision.
+level: high
+
+---
+
+# Dropbear SSH on an OT device is one of the advisory's listed techniques (T1219). Most PLCs do
+# not run SSH at all, so an established SSH session to an OT address from outside the
+# engineering jump hosts deserves a look.
+
+title: SSH Session To OT Address From Outside Engineering Jump Hosts
+id: babcb03c-5d27-43ae-8841-148984fd0daf
+status: experimental
+description: |
+  SSH (22) to an address in the OT range from any source other than the named engineering jump
+  hosts. CISA AA26-097A reports Dropbear SSH used for remote access on compromised devices and
+  modems. Edit both CIDR lists before use. As shipped they are placeholders and will not match.
+references:
+    - https://www.cisa.gov/news-events/cybersecurity-advisories/aa26-097a
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-09-16
+tags:
+    - attack.command-and-control
+    - attack.t1219
+logsource:
+    category: firewall
+detection:
+    ssh_to_ot:
+        dst_port: 22
+        dst_ip|cidr:
+            - '192.0.2.0/24'  # REPLACE with OT ranges (TEST-NET placeholder)
+    jump_hosts:
+        src_ip|cidr:
+            - '198.51.100.0/28'  # REPLACE with engineering jump hosts (TEST-NET placeholder)
+    condition: ssh_to_ot and not jump_hosts
+falsepositives:
+    - Cellular and industrial modems legitimately managed over SSH by the carrier or integrator. Add their management sources to jump_hosts once confirmed.
+level: medium

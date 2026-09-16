@@ -1,0 +1,58 @@
+# Sigma - CISA AA26-097A indicator IPs
+#
+# All 21 unique IPv4 indicators from the two official STIX JSON files for AA26-097A (the April
+# 2026 original and the July 2026 update), extracted programmatically on 2026-09-16. These are
+# atomic and will decay. Deploy for retrospective hunting as much as for alerting.
+#
+# Attribution ("Iranian-affiliated cyber actors") is the authoring agencies'.
+#
+# Ref: https://www.cisa.gov/news-events/cybersecurity-advisories/aa26-097a
+# Author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team, 2026-09-16
+
+title: Connection With CISA AA26-097A Indicator Address
+id: dcb43ad5-9a52-4aa7-b198-1edfbecc3c0f
+status: experimental
+description: |
+  Traffic to or from an IP address listed in CISA AA26-097A, which reports these addresses in
+  exploitation of internet-exposed PLCs. Hosting addresses get reassigned, so a hit long after
+  July 2026 needs its date checked before it is treated as related.
+references:
+    - https://www.cisa.gov/news-events/cybersecurity-advisories/aa26-097a
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-09-16
+tags:
+    - attack.command-and-control
+    - attack.t0883
+logsource:
+    category: firewall
+detection:
+    src:
+        src_ip: &aa26097a
+            - '185.82.73.162'
+            - '185.82.73.164'
+            - '185.82.73.165'
+            - '185.82.73.167'
+            - '185.82.73.168'
+            - '185.82.73.170'
+            - '185.82.73.171'
+            - '185.82.73.175'
+            - '135.136.1.133'
+            - '141.11.164.153'
+            - '175.110.121.39'
+            - '175.110.121.41'
+            - '175.110.121.42'
+            - '175.110.121.107'
+            - '192.142.54.79'
+            - '84.200.205.165'
+            - '185.225.17.225'
+            - '79.133.46.209'
+            - '88.80.150.199'
+            - '88.80.150.200'
+            - '88.80.150.202'
+    dst:
+        dst_ip: *aa26097a
+    condition: src or dst
+falsepositives:
+    - Reassignment of hosting addresses after the advisory. Check the event date against the July 2026 update.
+    - Threat-intel tooling probing indicators deliberately.
+level: high

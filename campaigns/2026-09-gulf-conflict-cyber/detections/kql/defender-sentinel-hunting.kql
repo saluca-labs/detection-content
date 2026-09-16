@@ -1,0 +1,118 @@
+// KQL for Microsoft Defender XDR and Sentinel - Gulf conflict cyber activity.
+//
+// Built from CISA AA26-097A (PLC exploitation), Check Point Research (camera exploitation
+// attempts) and Unit 42 (phishing and StealC infrastructure). Attribution in those sources is
+// theirs. See the campaign README for the editorial standard.
+//
+// Author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team, 2026-09-16
+// License: Apache-2.0
+//
+// AUTHORED, NOT EXECUTED. There is no tenant behind these queries. Table and column names
+// follow the documented schemas but have not been run. Expect to fix at least one field name
+// per query and budget for it.
+
+
+// =========================================================================================
+// 1. Internet to OT on industrial protocol ports. ALERT once OtRanges is filled in.
+//
+// Keys on the architecture, not the actor, so it survives infrastructure rotation. Without
+// OtRanges it is too broad to run, because 102 and 2222 collide with unrelated services.
+// =========================================================================================
+let OtRanges = dynamic(["192.0.2.0/24"]);   // REPLACE (TEST-NET placeholder)
+let OtPorts = dynamic([44818, 2222, 102, 502]);
+CommonSecurityLog
+| where TimeGenerated > ago(7d)
+| where DestinationPort in (OtPorts)
+| where ipv4_is_in_any_range(DestinationIP, OtRanges)
+| where not(ipv4_is_private(SourceIP))
+| summarize Attempts = count(), Ports = make_set(DestinationPort),
+            FirstSeen = min(TimeGenerated), LastSeen = max(TimeGenerated),
+            Actions = make_set(DeviceAction)
+            by SourceIP, DestinationIP
+| extend Finding = "internet source reached an OT address on an industrial port"
+| order by Attempts desc
+
+
+// =========================================================================================
+// 2. CISA AA26-097A indicator IPs, any direction. HUNT back to April 2026, then ALERT.
+// =========================================================================================
+let AA26097A = dynamic([
+    "185.82.73.162","185.82.73.164","185.82.73.165","185.82.73.167","185.82.73.168",
+    "185.82.73.170","185.82.73.171","185.82.73.175","135.136.1.133","141.11.164.153",
+    "175.110.121.39","175.110.121.41","175.110.121.42","175.110.121.107","192.142.54.79",
+    "84.200.205.165","185.225.17.225","79.133.46.209","88.80.150.199","88.80.150.200",
+    "88.80.150.202"]);
+union
+    (CommonSecurityLog
+        | where TimeGenerated > ago(180d)
+        | where SourceIP in (AA26097A) or DestinationIP in (AA26097A)
+        | project TimeGenerated, Src = SourceIP, Dst = DestinationIP, DestinationPort, DeviceAction, Table = "CommonSecurityLog"),
+    (DeviceNetworkEvents
+        | where Timestamp > ago(180d)
+        | where RemoteIP in (AA26097A)
+        | project TimeGenerated = Timestamp, Src = LocalIP, Dst = RemoteIP, DestinationPort = RemotePort, DeviceAction = ActionType, Table = "DeviceNetworkEvents")
+| order by TimeGenerated desc
+
+
+// =========================================================================================
+// 3. Camera exploitation shapes in web or WAF logs. ALERT for 7921 and 36260.
+//
+// Needs a log source that fronts the devices. Adjust the table to your WAF or proxy. The
+// W3CIISLog and CommonSecurityLog field names are shown. Structure only, no payloads.
+// =========================================================================================
+CommonSecurityLog
+| where TimeGenerated > ago(30d)
+| where RequestURL has_any ("auth=YWRtaW46MTEK", "/SDK/webLanguage", "/RPC2_Login",
+                            "/php/ping.php", "/bic/ssoService/v1/applyCT")
+| extend Cve = case(
+    RequestURL has "auth=YWRtaW46MTEK",           "CVE-2017-7921",
+    RequestURL has "/SDK/webLanguage",            "CVE-2021-36260 (if PUT)",
+    RequestURL has "/RPC2_Login",                 "CVE-2021-33044 (check body)",
+    RequestURL has "/php/ping.php",               "CVE-2023-6895 (check params)",
+    RequestURL has "/bic/ssoService/v1/applyCT",  "CVE-2025-34067",
+    "other")
+| where not(ipv4_is_private(SourceIP))
+| project TimeGenerated, SourceIP, DestinationIP, RequestMethod, RequestURL, Cve, DeviceAction
+| order by TimeGenerated desc
+
+
+// =========================================================================================
+// 4. Gulf-brand typosquats, brand-chained subdomains, StealC numbered file hosts. HUNT.
+//
+// Pattern searches, so they do not depend on the dated Unit 42 list. Tested on 2026-09-16
+// against every relevant Unit 42 domain (all matched) and a set of legitimate brand and
+// file-sharing domains (none matched). Your estate will still produce some noise.
+// =========================================================================================
+let TyposquatRx = @"(?i)(emirates|etisalat|dubai|abudhabi|aramco|saudi|customs|govauv)[a-z0-9-]*\.(top|click|life|cyou|xyz|sbs|shop|icu|buzz|info)$";
+let ChainRx     = @"(?i)(^|\.)(com|gov|ae)[.-][a-z0-9-]+(\.[a-z0-9-]+)*\.(info|top|click|life|cyou|xyz|courses)$";
+let StealcRx    = @"(?i)(^|\.)(mega|hyper|max)?(file|data)(host|vault)\d+\.(sbs|homes|mom|cyou|xyz|pics)$";
+DeviceNetworkEvents
+| where Timestamp > ago(30d)
+| where isnotempty(RemoteUrl)
+| extend Host = tolower(tostring(split(RemoteUrl, "/")[0]))
+| extend Pattern = case(
+    Host matches regex StealcRx,    "stealc-numbered-filehost",
+    Host matches regex ChainRx,     "brand-chained-subdomain",
+    Host matches regex TyposquatRx, "gulf-brand-typosquat",
+    "")
+| where isnotempty(Pattern)
+| summarize Hits = count(), Devices = dcount(DeviceName), Procs = make_set(InitiatingProcessFileName, 10),
+            FirstSeen = min(Timestamp) by Host, Pattern
+| order by Pattern asc, Hits desc
+
+
+// =========================================================================================
+// 5. Bulk destructive actions from device management. HUNT, then ALERT once baselined.
+//
+// Destructive operations reported in this conflict are wipes at scale. A compromised admin
+// account using legitimate MDM to wipe the fleet needs no malware, so the management plane
+// is the place to watch. The 10-in-15-minutes threshold is a starting point, not a result.
+// =========================================================================================
+IntuneAuditLogs
+| where TimeGenerated > ago(30d)
+| where OperationName has_any ("wipe", "retire", "delete ManagedDevice", "cleanWindowsDevice")
+| summarize Actions = count(), Targets = dcount(tostring(parse_json(Properties).TargetObjectIds)),
+            Ops = make_set(OperationName) by Identity, bin(TimeGenerated, 15m)
+| where Actions >= 10
+| extend Finding = "bulk destructive device-management actions by one identity"
+| order by Actions desc
