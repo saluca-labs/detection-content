@@ -1,0 +1,74 @@
+# Sigma - Gulf-themed phishing and impersonation infrastructure (Unit 42)
+#
+# Domains impersonating UAE government, postal, customs, telecom and banking brands, and Saudi
+# Aramco and Saudi banking brands, as listed by Unit 42 (brief last updated 2026-04-17). Every
+# value was string-matched against the Unit 42 page on 2026-09-16.
+#
+# HUNT, not alert. These are months old, most will be dead or re-registered, and the published
+# list is a sample. The durable version of this idea is the typosquat pattern search in the KQL
+# and SPL files, which does not depend on the list.
+#
+# Unit 42 lists these as phishing and scam infrastructure active during the conflict. This rule
+# does not assert who operates them.
+#
+# Ref: https://unit42.paloaltonetworks.com/iranian-cyberattacks-2026/
+# Author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team, 2026-09-16
+
+title: DNS Query For Gulf-Themed Phishing Domain Listed By Unit 42
+id: 2bdada80-5fab-4014-90c8-61383c97126b
+status: experimental
+description: |
+  A resolution of a domain Unit 42 listed as UAE- or Saudi-themed phishing or impersonation
+  infrastructure during the 2026 conflict. Use for retrospective hunting across DNS history
+  from March to May 2026 first.
+references:
+    - https://unit42.paloaltonetworks.com/iranian-cyberattacks-2026/
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-09-16
+tags:
+    - attack.initial-access
+    - attack.t1566.002
+    - attack.resource-development
+    - attack.t1583.001
+logsource:
+    category: dns_query
+    product: windows
+detection:
+    uae_themed:
+        QueryName|endswith:
+            - 'emiratescryptobank.com'
+            - 'emiratesinvestunion.com'
+            - 'myemiratespost.click'
+            - 'traz.top'
+            - 'racunari-bl.com'
+            - 'azmtrust.com'
+            - 'dubaicustonms.top'
+            - 'dubai-custboms.top'
+            - 'dubai-custbims.top'
+            - 'dubai-customs.top'
+            - 'dubaicustoms.top'
+            - 'dubaicuctoms.com'
+            - 'dubaiicuctoms.com'
+            - 'gov-tollbillba.life'
+            - 'com-govauv.top'
+            - 'govauv.top'
+            - '0111etisalat.com'
+            - 'etisalatquickpay.com'
+            - 'etisalataccountquickpayae.top'
+            - 'etisalataccount-quickpayae.click'
+            - 'emiratesbankgroup.info'
+    saudi_themed:
+        QueryName|endswith:
+            - 'sapb-aramco.com'
+            - 'aramcoamericainvest.com'
+            - 'saudi-bill-pay.com'
+            - 'saudidigtalbank.com'
+    mobile_lure:
+        QueryName|endswith:
+            - 'ra-backup.com'
+            - 'shirideitch.com'
+    condition: uae_themed or saudi_themed or mobile_lure
+falsepositives:
+    - azmtrust.com, traz.top and racunari-bl.com were listed as parents of malicious subdomains. The parent may host unrelated content, so confirm the full query name.
+    - Security tooling resolving indicators deliberately.
+level: medium

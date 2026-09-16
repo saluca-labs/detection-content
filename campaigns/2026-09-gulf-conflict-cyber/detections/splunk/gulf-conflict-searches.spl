@@ -1,0 +1,88 @@
+* Splunk - Gulf conflict cyber activity.
+*
+* Built from CISA AA26-097A (PLC exploitation), Check Point Research (camera exploitation
+* attempts) and Unit 42 (phishing and StealC infrastructure). Attribution in those sources is
+* theirs. See the campaign README for the editorial standard.
+*
+* Author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team, 2026-09-16
+* License: Apache-2.0
+*
+* AUTHORED, NOT EXECUTED. Written against CIM data models (Network_Traffic, Web, Network_Resolution)
+* and assumes they are accelerated or populated. Edit index names, OT ranges and thresholds.
+
+
+* =====================================================================================
+* 1. Internet to OT on industrial protocol ports. ALERT once the OT range is filled in.
+* =====================================================================================
+| tstats summariesonly=true count min(_time) as first_seen max(_time) as last_seen values(All_Traffic.action) as actions
+    from datamodel=Network_Traffic.All_Traffic
+    where All_Traffic.dest_port IN (44818, 2222, 102, 502)
+    by All_Traffic.src_ip All_Traffic.dest_ip All_Traffic.dest_port
+| rename All_Traffic.* as *
+| where cidrmatch("192.0.2.0/24", dest_ip)
+| where NOT (cidrmatch("10.0.0.0/8", src_ip) OR cidrmatch("172.16.0.0/12", src_ip) OR cidrmatch("192.168.0.0/16", src_ip))
+| eval finding="internet source reached an OT address on an industrial port"
+| sort - count
+
+
+* =====================================================================================
+* 2. CISA AA26-097A indicator IPs, any direction. HUNT back to April 2026, then ALERT.
+* =====================================================================================
+| tstats summariesonly=true count min(_time) as first_seen max(_time) as last_seen
+    from datamodel=Network_Traffic.All_Traffic
+    where earliest=-180d
+      (All_Traffic.src_ip IN ("185.82.73.162","185.82.73.164","185.82.73.165","185.82.73.167","185.82.73.168","185.82.73.170","185.82.73.171","185.82.73.175","135.136.1.133","141.11.164.153","175.110.121.39","175.110.121.41","175.110.121.42","175.110.121.107","192.142.54.79","84.200.205.165","185.225.17.225","79.133.46.209","88.80.150.199","88.80.150.200","88.80.150.202")
+       OR All_Traffic.dest_ip IN ("185.82.73.162","185.82.73.164","185.82.73.165","185.82.73.167","185.82.73.168","185.82.73.170","185.82.73.171","185.82.73.175","135.136.1.133","141.11.164.153","175.110.121.39","175.110.121.41","175.110.121.42","175.110.121.107","192.142.54.79","84.200.205.165","185.225.17.225","79.133.46.209","88.80.150.199","88.80.150.200","88.80.150.202"))
+    by All_Traffic.src_ip All_Traffic.dest_ip All_Traffic.dest_port
+| rename All_Traffic.* as *
+| sort - last_seen
+
+
+* =====================================================================================
+* 3. Camera exploitation shapes in web, proxy or WAF logs. ALERT for 7921 and 36260.
+* =====================================================================================
+| tstats summariesonly=true count values(Web.http_method) as methods values(Web.url) as urls
+    from datamodel=Web.Web
+    where (Web.url="*auth=YWRtaW46MTEK*" OR Web.url="*/SDK/webLanguage*" OR Web.url="*/RPC2_Login*"
+           OR Web.url="*/php/ping.php*" OR Web.url="*/bic/ssoService/v1/applyCT*")
+    by Web.src Web.dest
+| rename Web.* as *
+| eval cve=case(match(mvjoin(urls," "),"auth=YWRtaW46MTEK"),"CVE-2017-7921",
+               match(mvjoin(urls," "),"/SDK/webLanguage") AND match(mvjoin(methods," "),"PUT"),"CVE-2021-36260",
+               match(mvjoin(urls," "),"/RPC2_Login"),"CVE-2021-33044 (check body)",
+               match(mvjoin(urls," "),"/php/ping.php"),"CVE-2023-6895 (check params)",
+               match(mvjoin(urls," "),"/bic/ssoService/v1/applyCT"),"CVE-2025-34067",
+               true(),"review")
+| where NOT (cidrmatch("10.0.0.0/8", src) OR cidrmatch("172.16.0.0/12", src) OR cidrmatch("192.168.0.0/16", src))
+| sort - count
+
+
+* =====================================================================================
+* 4. Gulf-brand typosquats, brand-chained subdomains, StealC numbered file hosts. HUNT.
+*    The patterns were tested on 2026-09-16 against the Unit 42 domains (all matched) and
+*    a legitimate set (none matched).
+* =====================================================================================
+| tstats summariesonly=true count dc(DNS.src) as clients min(_time) as first_seen
+    from datamodel=Network_Resolution.DNS
+    by DNS.query
+| rename DNS.query as query
+| eval query=lower(query)
+| eval pattern=case(
+    match(query, "(^|\.)(mega|hyper|max)?(file|data)(host|vault)\d+\.(sbs|homes|mom|cyou|xyz|pics)$"), "stealc-numbered-filehost",
+    match(query, "(^|\.)(com|gov|ae)[.-][a-z0-9-]+(\.[a-z0-9-]+)*\.(info|top|click|life|cyou|xyz|courses)$"), "brand-chained-subdomain",
+    match(query, "(emirates|etisalat|dubai|abudhabi|aramco|saudi|customs|govauv)[a-z0-9-]*\.(top|click|life|cyou|xyz|sbs|shop|icu|buzz|info)$"), "gulf-brand-typosquat")
+| where isnotnull(pattern)
+| sort pattern - count
+
+
+* =====================================================================================
+* 5. Bulk destructive device-management actions. HUNT, then ALERT once baselined.
+*    Intune audit via the Microsoft Graph / Azure add-on. Adjust the sourcetype and fields.
+* =====================================================================================
+index=azure sourcetype="azure:monitor:aad" OR sourcetype="ms:intune:audit"
+    (operationName="*wipe*" OR operationName="*retire*" OR operationName="*delete ManagedDevice*" OR operationName="*cleanWindowsDevice*")
+| bin _time span=15m
+| stats count as actions values(operationName) as ops by identity _time
+| where actions >= 10
+| eval finding="bulk destructive device-management actions by one identity"
+| sort - actions

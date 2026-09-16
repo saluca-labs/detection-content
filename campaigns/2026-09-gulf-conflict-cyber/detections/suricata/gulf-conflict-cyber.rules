@@ -1,0 +1,77 @@
+# ============================================================================
+# Suricata rules - Gulf conflict cyber activity
+#
+#   OT     internet-to-PLC on industrial ports     (CISA AA26-097A)
+#   CAM    Hikvision / Dahua exploitation shapes   (Check Point Research)
+#   IOC    CISA AA26-097A indicator IPs
+#   DNS    Gulf-themed phishing and StealC hosts   (Unit 42)
+#
+# Author : Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+# Date   : 2026-09-16
+# Ref    : README.md
+#
+# SID range 9200100-9200199 (local rules). Renumber to fit your allocation.
+# Requires Suricata 7+ for the http.* and dns.query keywords. One rule per line: Suricata
+# does not join multi-line rules without trailing backslashes. Tested on Suricata 7.0.17.
+#
+# Set $OT_NET in suricata.yaml to your OT ranges. The OT rules are meaningless without it.
+# Structure only: the camera rules match what each vulnerability requires, not a payload.
+# Durable: OT and CAM. Decaying: IOC and the DNS lists.
+# ============================================================================
+
+
+# ----------------------------------------------------------------------------
+# OT: session initiation from outside to industrial protocol ports
+# ----------------------------------------------------------------------------
+
+alert tcp $EXTERNAL_NET any -> $OT_NET 44818 (msg:"SALUCA OT inbound EtherNet/IP 44818 from external network"; flow:to_server; flags:S,12; threshold:type limit, track by_src, count 1, seconds 3600; reference:url,www.cisa.gov/news-events/cybersecurity-advisories/aa26-097a; classtype:attempted-admin; sid:9200100; rev:1;)
+
+alert tcp $EXTERNAL_NET any -> $OT_NET 2222 (msg:"SALUCA OT inbound EtherNet/IP 2222 from external network"; flow:to_server; flags:S,12; threshold:type limit, track by_src, count 1, seconds 3600; reference:url,www.cisa.gov/news-events/cybersecurity-advisories/aa26-097a; classtype:attempted-admin; sid:9200101; rev:1;)
+
+alert tcp $EXTERNAL_NET any -> $OT_NET 102 (msg:"SALUCA OT inbound S7comm 102 from external network"; flow:to_server; flags:S,12; threshold:type limit, track by_src, count 1, seconds 3600; reference:url,www.cisa.gov/news-events/cybersecurity-advisories/aa26-097a; classtype:attempted-admin; sid:9200102; rev:1;)
+
+alert tcp $EXTERNAL_NET any -> $OT_NET 502 (msg:"SALUCA OT inbound Modbus/TCP 502 from external network"; flow:to_server; flags:S,12; threshold:type limit, track by_src, count 1, seconds 3600; reference:url,www.cisa.gov/news-events/cybersecurity-advisories/aa26-097a; classtype:attempted-admin; sid:9200103; rev:1;)
+
+# SSH to an OT address from outside. The advisory lists Dropbear SSH (T1219).
+alert tcp $EXTERNAL_NET any -> $OT_NET 22 (msg:"SALUCA OT inbound SSH to OT address from external network"; flow:to_server; flags:S,12; threshold:type limit, track by_src, count 1, seconds 3600; reference:url,www.cisa.gov/news-events/cybersecurity-advisories/aa26-097a; classtype:attempted-admin; sid:9200104; rev:1;)
+
+
+# ----------------------------------------------------------------------------
+# CAM: camera and security-platform exploitation shapes
+# ----------------------------------------------------------------------------
+
+# CVE-2017-7921. The fixed auth value decodes to admin:11. A real client never sends it.
+alert http any any -> $HOME_NET any (msg:"SALUCA CAM Hikvision CVE-2017-7921 magic auth parameter"; flow:established,to_server; http.uri; content:"auth=YWRtaW46MTEK"; fast_pattern; reference:cve,2017-7921; classtype:attempted-admin; sid:9200110; rev:1;)
+
+# CVE-2021-36260. Unauthenticated PUT to the language endpoint carrying shell syntax.
+alert http any any -> $HOME_NET any (msg:"SALUCA CAM Hikvision CVE-2021-36260 webLanguage command injection shape"; flow:established,to_server; http.method; content:"PUT"; http.uri; content:"/SDK/webLanguage"; fast_pattern; http.request_body; content:"<language>"; nocase; pcre:"/<language>[^<]*(\$\x28|`|\x3b|\|)/i"; reference:cve,2021-36260; classtype:attempted-admin; sid:9200111; rev:1;)
+
+# CVE-2021-33044. RPC2 login presenting the NetKeyboard client type.
+alert http any any -> $HOME_NET any (msg:"SALUCA CAM Dahua CVE-2021-33044 NetKeyboard login bypass shape"; flow:established,to_server; http.uri; content:"/RPC2_Login"; fast_pattern; http.request_body; content:"NetKeyboard"; nocase; reference:cve,2021-33044; classtype:attempted-admin; sid:9200112; rev:1;)
+
+# CVE-2023-6895. ping handler receiving shell metacharacters. Medium confidence on the path.
+alert http any any -> $HOME_NET any (msg:"SALUCA CAM Hikvision CVE-2023-6895 ping.php injection shape"; flow:established,to_server; http.uri; content:"/php/ping.php"; fast_pattern; pcre:"/(?:%7C|%3B|%60|%24%28|\||\x3b|`|\$\x28)/i"; reference:cve,2023-6895; classtype:attempted-admin; sid:9200113; rev:1;)
+
+# CVE-2025-34067. applyCT SSO endpoint receiving a serialised type hint. Medium confidence on the path.
+alert http any any -> $HOME_NET any (msg:"SALUCA CAM Hikvision ISMP CVE-2025-34067 applyCT deserialisation shape"; flow:established,to_server; http.uri; content:"/bic/ssoService/v1/applyCT"; fast_pattern; http.request_body; content:"@type"; nocase; reference:cve,2025-34067; classtype:attempted-admin; sid:9200114; rev:1;)
+
+
+# ----------------------------------------------------------------------------
+# IOC: CISA AA26-097A indicator IPs (21, from the official STIX files)
+# ----------------------------------------------------------------------------
+
+alert ip [185.82.73.162,185.82.73.164,185.82.73.165,185.82.73.167,185.82.73.168,185.82.73.170,185.82.73.171,185.82.73.175,135.136.1.133,141.11.164.153,175.110.121.39,175.110.121.41,175.110.121.42,175.110.121.107,192.142.54.79,84.200.205.165,185.225.17.225,79.133.46.209,88.80.150.199,88.80.150.200,88.80.150.202] any -> $HOME_NET any (msg:"SALUCA IOC inbound from CISA AA26-097A indicator address"; threshold:type limit, track by_src, count 1, seconds 3600; reference:url,www.cisa.gov/news-events/cybersecurity-advisories/aa26-097a; classtype:misc-attack; sid:9200120; rev:1;)
+
+alert ip $HOME_NET any -> [185.82.73.162,185.82.73.164,185.82.73.165,185.82.73.167,185.82.73.168,185.82.73.170,185.82.73.171,185.82.73.175,135.136.1.133,141.11.164.153,175.110.121.39,175.110.121.41,175.110.121.42,175.110.121.107,192.142.54.79,84.200.205.165,185.225.17.225,79.133.46.209,88.80.150.199,88.80.150.200,88.80.150.202] any (msg:"SALUCA IOC outbound to CISA AA26-097A indicator address"; threshold:type limit, track by_dst, count 1, seconds 3600; reference:url,www.cisa.gov/news-events/cybersecurity-advisories/aa26-097a; classtype:trojan-activity; sid:9200121; rev:1;)
+
+
+# ----------------------------------------------------------------------------
+# DNS: Unit 42 listed infrastructure (dated April 2026) and the StealC pattern
+# ----------------------------------------------------------------------------
+
+alert dns $HOME_NET any -> any any (msg:"SALUCA DNS Gulf-themed phishing domain listed by Unit 42"; dns.query; pcre:"/(?:^|\.)(?:emiratescryptobank\.com|emiratesinvestunion\.com|myemiratespost\.click|dubaicustonms\.top|dubai-custboms\.top|dubai-custbims\.top|dubai-customs\.top|dubaicustoms\.top|dubaicuctoms\.com|dubaiicuctoms\.com|gov-tollbillba\.life|com-govauv\.top|govauv\.top|0111etisalat\.com|etisalatquickpay\.com|etisalataccountquickpayae\.top|etisalataccount-quickpayae\.click|emiratesbankgroup\.info|sapb-aramco\.com|aramcoamericainvest\.com|saudi-bill-pay\.com|saudidigtalbank\.com)$/i"; reference:url,unit42.paloaltonetworks.com/iranian-cyberattacks-2026/; classtype:social-engineering; sid:9200130; rev:1;)
+
+alert dns $HOME_NET any -> any any (msg:"SALUCA DNS malicious RedAlert APK host or beacon domain listed by Unit 42"; dns.query; pcre:"/(?:^|\.)(?:ra-backup\.com|shirideitch\.com)$/i"; reference:url,unit42.paloaltonetworks.com/iranian-cyberattacks-2026/; classtype:trojan-activity; sid:9200131; rev:1;)
+
+# Hunting grade. Pattern of numbered file hosts on rotating cheap TLDs used for StealC delivery.
+alert dns $HOME_NET any -> any any (msg:"SALUCA DNS StealC-pattern numbered file host (hunting)"; dns.query; pcre:"/(?:^|\.)(?:mega|hyper|max)?(?:file|data)(?:host|vault)\d+\.(?:sbs|homes|mom|cyou|xyz|pics)$/i"; reference:url,unit42.paloaltonetworks.com/iranian-cyberattacks-2026/; classtype:bad-unknown; sid:9200132; rev:1;)
