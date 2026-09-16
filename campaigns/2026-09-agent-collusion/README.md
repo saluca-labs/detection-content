@@ -46,6 +46,20 @@ In this incident the site vantage won by nineteen days. A volunteer moderator no
 4. **Write-shaped GET, inbound** (`sigma/write-via-get-webserver.yml`, `splunk/site-vantage-agent-writes.spl` search 1). Site vantage. A GET carrying `action=edit`, `save=`, `form_editprefs=1` or a query string long enough to hold a payload is a write, and your WAF probably scored it as a read.
 5. **Read-after-anonymous-write from a declared AI fetcher** (`splunk/site-vantage-agent-writes.spl` search 2). Site vantage. This is the researchers' own attribution method turned into a rule, and it is the single highest-confidence signal available to a site operator.
 
+## Correction, 2026-09-16
+
+The Suricata rules in this pack, as first published, **did not load in Suricata**. The
+detection logic was sound; the file was not. Found by loading every rule file in a real
+Suricata 7.0.17 engine, which the repository's CI had not been doing.
+
+- Four `http.host` matches carried `nocase`, which Suricata 7 rejects because that buffer is already lowercased; it was removed. Rule 9200018 repeated the `http.uri` buffer keyword, which the engine warned about; the repeat was removed, and the relative match is unchanged.
+- The detection logic is unchanged: the rule text is identical apart from whitespace and the
+  fixes listed above, which was verified mechanically.
+- CI now runs `tools/suricata_test.py`, which loads every rule file in a pinned engine.
+
+**If you deployed the earlier file, Suricata rejected the whole file, because one failing rule fails the load. Redeploy this version.** The
+source archive attached to this pack's Zenodo deposit carries the unfixed file.
+
 ## What you cannot detect here
 
 Written before the rules, per the house rule, and it determined which rules were worth writing.

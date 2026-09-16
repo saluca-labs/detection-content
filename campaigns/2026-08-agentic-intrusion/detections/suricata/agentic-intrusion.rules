@@ -28,46 +28,15 @@
 # TLS SNI - the main event
 # --------------------------------------------------------------------------
 
-alert tls $RESTRICTED_NET any -> $EXTERNAL_NET 443 (
-    msg:"SALUCA Agentic - LLM inference API contacted from restricted segment (Anthropic)";
-    tls.sni; content:"api.anthropic.com"; endswith;
-    flow:established,to_server;
-    threshold:type limit, track by_src, count 1, seconds 300;
-    metadata:attack_target Client, created_at 2026_08_20, confidence Medium;
-    reference:url,securityaffairs.com/197079/apt/china-linked-hackers-use-ai-agents-in-autonomous-attack-on-taiwan.html;
-    classtype:policy-violation; sid:9200001; rev:1;)
+alert tls $RESTRICTED_NET any -> $EXTERNAL_NET 443 (msg:"SALUCA Agentic - LLM inference API contacted from restricted segment (Anthropic)"; tls.sni; content:"api.anthropic.com"; endswith; flow:established,to_server; threshold:type limit, track by_src, count 1, seconds 300; metadata:attack_target Client, created_at 2026_08_20, confidence Medium; reference:url,securityaffairs.com/197079/apt/china-linked-hackers-use-ai-agents-in-autonomous-attack-on-taiwan.html; classtype:policy-violation; sid:9200001; rev:1;)
 
-alert tls $RESTRICTED_NET any -> $EXTERNAL_NET 443 (
-    msg:"SALUCA Agentic - LLM inference API contacted from restricted segment (OpenAI)";
-    tls.sni; content:"api.openai.com"; endswith;
-    flow:established,to_server;
-    threshold:type limit, track by_src, count 1, seconds 300;
-    metadata:created_at 2026_08_20, confidence Medium;
-    classtype:policy-violation; sid:9200002; rev:1;)
+alert tls $RESTRICTED_NET any -> $EXTERNAL_NET 443 (msg:"SALUCA Agentic - LLM inference API contacted from restricted segment (OpenAI)"; tls.sni; content:"api.openai.com"; endswith; flow:established,to_server; threshold:type limit, track by_src, count 1, seconds 300; metadata:created_at 2026_08_20, confidence Medium; classtype:policy-violation; sid:9200002; rev:1;)
 
-alert tls $RESTRICTED_NET any -> $EXTERNAL_NET 443 (
-    msg:"SALUCA Agentic - LLM inference API contacted from restricted segment (OpenRouter)";
-    tls.sni; content:"openrouter.ai"; endswith;
-    flow:established,to_server;
-    threshold:type limit, track by_src, count 1, seconds 300;
-    metadata:created_at 2026_08_20, confidence Medium;
-    classtype:policy-violation; sid:9200003; rev:1;)
+alert tls $RESTRICTED_NET any -> $EXTERNAL_NET 443 (msg:"SALUCA Agentic - LLM inference API contacted from restricted segment (OpenRouter)"; tls.sni; content:"openrouter.ai"; endswith; flow:established,to_server; threshold:type limit, track by_src, count 1, seconds 300; metadata:created_at 2026_08_20, confidence Medium; classtype:policy-violation; sid:9200003; rev:1;)
 
-alert tls $RESTRICTED_NET any -> $EXTERNAL_NET 443 (
-    msg:"SALUCA Agentic - LLM inference API contacted from restricted segment (Google Gemini)";
-    tls.sni; content:"generativelanguage.googleapis.com"; endswith;
-    flow:established,to_server;
-    threshold:type limit, track by_src, count 1, seconds 300;
-    metadata:created_at 2026_08_20, confidence Medium;
-    classtype:policy-violation; sid:9200004; rev:1;)
+alert tls $RESTRICTED_NET any -> $EXTERNAL_NET 443 (msg:"SALUCA Agentic - LLM inference API contacted from restricted segment (Google Gemini)"; tls.sni; content:"generativelanguage.googleapis.com"; endswith; flow:established,to_server; threshold:type limit, track by_src, count 1, seconds 300; metadata:created_at 2026_08_20, confidence Medium; classtype:policy-violation; sid:9200004; rev:1;)
 
-alert tls $RESTRICTED_NET any -> $EXTERNAL_NET 443 (
-    msg:"SALUCA Agentic - LLM inference API contacted from restricted segment (other provider)";
-    tls.sni; pcre:"/(api\.(mistral|groq|deepseek|x)\.ai|api\.together\.xyz|\.openai\.azure\.com)$/i";
-    flow:established,to_server;
-    threshold:type limit, track by_src, count 1, seconds 300;
-    metadata:created_at 2026_08_20, confidence Medium;
-    classtype:policy-violation; sid:9200005; rev:1;)
+alert tls $RESTRICTED_NET any -> $EXTERNAL_NET 443 (msg:"SALUCA Agentic - LLM inference API contacted from restricted segment (other provider)"; tls.sni; pcre:"/(api\.(mistral|groq|deepseek|x)\.ai|api\.together\.xyz|\.openai\.azure\.com)$/i"; flow:established,to_server; threshold:type limit, track by_src, count 1, seconds 300; metadata:created_at 2026_08_20, confidence Medium; classtype:policy-violation; sid:9200005; rev:1;)
 
 # --------------------------------------------------------------------------
 # Sustained inference from one restricted host
@@ -75,13 +44,7 @@ alert tls $RESTRICTED_NET any -> $EXTERNAL_NET 443 (
 # One call might be a stray integration. An agent working a target produces a call per
 # planning step, continuously. Volume is the discriminator.
 
-alert tls $RESTRICTED_NET any -> $EXTERNAL_NET 443 (
-    msg:"SALUCA Agentic - sustained LLM inference from restricted host, possible agent loop";
-    tls.sni; pcre:"/(api\.anthropic\.com|api\.openai\.com|openrouter\.ai|generativelanguage\.googleapis\.com|api\.mistral\.ai|api\.groq\.com|api\.deepseek\.com)$/i";
-    flow:established,to_server;
-    threshold:type threshold, track by_src, count 20, seconds 600;
-    metadata:created_at 2026_08_20, confidence High;
-    classtype:policy-violation; sid:9200006; rev:1;)
+alert tls $RESTRICTED_NET any -> $EXTERNAL_NET 443 (msg:"SALUCA Agentic - sustained LLM inference from restricted host, possible agent loop"; tls.sni; pcre:"/(api\.anthropic\.com|api\.openai\.com|openrouter\.ai|generativelanguage\.googleapis\.com|api\.mistral\.ai|api\.groq\.com|api\.deepseek\.com)$/i"; flow:established,to_server; threshold:type threshold, track by_src, count 20, seconds 600; metadata:created_at 2026_08_20, confidence High; classtype:policy-violation; sid:9200006; rev:1;)
 
 # --------------------------------------------------------------------------
 # Plaintext fallback
@@ -89,13 +52,7 @@ alert tls $RESTRICTED_NET any -> $EXTERNAL_NET 443 (
 # Rare, but self-hosted and proxied setups sometimes speak cleartext internally, and an
 # operator's own relay may not bother with TLS.
 
-alert http $RESTRICTED_NET any -> $EXTERNAL_NET any (
-    msg:"SALUCA Agentic - cleartext LLM API request from restricted segment";
-    http.host; pcre:"/(api\.anthropic\.com|api\.openai\.com|openrouter\.ai|api\.deepseek\.com)$/i";
-    flow:established,to_server;
-    threshold:type limit, track by_src, count 1, seconds 300;
-    metadata:created_at 2026_08_20, confidence Medium;
-    classtype:policy-violation; sid:9200007; rev:1;)
+alert http $RESTRICTED_NET any -> $EXTERNAL_NET any (msg:"SALUCA Agentic - cleartext LLM API request from restricted segment"; http.host; pcre:"/(api\.anthropic\.com|api\.openai\.com|openrouter\.ai|api\.deepseek\.com)$/i"; flow:established,to_server; threshold:type limit, track by_src, count 1, seconds 300; metadata:created_at 2026_08_20, confidence Medium; classtype:policy-violation; sid:9200007; rev:1;)
 
 # --------------------------------------------------------------------------
 # OpenAI-compatible API shape against an internal or unexpected host
@@ -105,15 +62,7 @@ alert http $RESTRICTED_NET any -> $EXTERNAL_NET any (
 # compatibility layer, LM Studio, and most proxies. Seeing it cross a segment boundary that
 # should carry no AI traffic is the signal.
 
-alert http $RESTRICTED_NET any -> any any (
-    msg:"SALUCA Agentic - OpenAI-compatible inference request crossing a restricted boundary";
-    http.method; content:"POST";
-    http.uri; content:"/v1/chat/completions";
-    flow:established,to_server;
-    threshold:type limit, track by_src, count 1, seconds 300;
-    metadata:created_at 2026_08_20, confidence Medium;
-    reference:url,securityaffairs.com/197079/apt/china-linked-hackers-use-ai-agents-in-autonomous-attack-on-taiwan.html;
-    classtype:policy-violation; sid:9200008; rev:1;)
+alert http $RESTRICTED_NET any -> any any (msg:"SALUCA Agentic - OpenAI-compatible inference request crossing a restricted boundary"; http.method; content:"POST"; http.uri; content:"/v1/chat/completions"; flow:established,to_server; threshold:type limit, track by_src, count 1, seconds 300; metadata:created_at 2026_08_20, confidence Medium; reference:url,securityaffairs.com/197079/apt/china-linked-hackers-use-ai-agents-in-autonomous-attack-on-taiwan.html; classtype:policy-violation; sid:9200008; rev:1;)
 
 # --------------------------------------------------------------------------
 # Deliberately NOT included

@@ -99,6 +99,20 @@ third-party input method editors write there legitimately. The FDMTP port-range 
 custom internal services unless you scope it to non-RFC1918 destinations. The `.sbs` TLD Suricata
 rule is deliberately shipped as a hunt, not an alert.
 
+## Correction, 2026-09-16
+
+The Suricata rules in this pack, as first published, **did not load in Suricata**. The
+detection logic was sound; the file was not. Found by loading every rule file in a real
+Suricata 7.0.17 engine, which the repository's CI had not been doing.
+
+- Rules were written across multiple lines without trailing backslashes, so none of them parsed. Each rule is now on one line. Six `http.host` matches also carried `nocase`, which Suricata 7 rejects because that buffer is already lowercased; it was removed.
+- The detection logic is unchanged: the rule text is identical apart from whitespace and the
+  fixes listed above, which was verified mechanically.
+- CI now runs `tools/suricata_test.py`, which loads every rule file in a pinned engine.
+
+**If you deployed the earlier file, Suricata rejected the whole file. Redeploy this version.** The
+source archive attached to this pack's Zenodo deposit carries the unfixed file.
+
 ## What you cannot detect here
 
 This section is the point of the package, and it is short on purpose.
