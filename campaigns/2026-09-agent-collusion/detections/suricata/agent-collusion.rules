@@ -44,7 +44,7 @@ alert http $SANDBOX_NET any -> !$AWS_S3_NET any (msg:"SALUCA Agent Collusion - S
 # still useful case: a Host header naming a Power BI or analytics endpoint arriving from a
 # workload that should not be talking to one directly at all.
 # -----------------------------------------------------------------------------------------
-alert http $SANDBOX_NET any -> $EXTERNAL_NET any (msg:"SALUCA Agent Collusion - contained workload sends Host header for analytics API endpoint"; flow:established,to_server; http.host; content:"analysis.windows.net"; nocase; classtype:policy-violation; reference:url,collusion.wiki; metadata:vantage operator, confidence medium; sid:9200012; rev:1;)
+alert http $SANDBOX_NET any -> $EXTERNAL_NET any (msg:"SALUCA Agent Collusion - contained workload sends Host header for analytics API endpoint"; flow:established,to_server; http.host; content:"analysis.windows.net"; classtype:policy-violation; reference:url,collusion.wiki; metadata:vantage operator, confidence medium; sid:9200012; rev:1;)
 
 # -----------------------------------------------------------------------------------------
 # 3. WRITE VIA GET, OUTBOUND. The workload is editing something.
@@ -76,13 +76,13 @@ alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"SALUCA Agent Collusion - inb
 # legitimate, which is why these are policy-violation rules scoped to contained workloads and
 # not malware rules.
 # -----------------------------------------------------------------------------------------
-alert http $SANDBOX_NET any -> $EXTERNAL_NET any (msg:"SALUCA Agent Collusion - contained workload uses public fetch relay"; flow:established,to_server; http.host; content:"r.jina.ai"; nocase; classtype:policy-violation; reference:url,collusion.wiki; metadata:vantage operator, confidence medium; sid:9200017; rev:1;)
+alert http $SANDBOX_NET any -> $EXTERNAL_NET any (msg:"SALUCA Agent Collusion - contained workload uses public fetch relay"; flow:established,to_server; http.host; content:"r.jina.ai"; classtype:policy-violation; reference:url,collusion.wiki; metadata:vantage operator, confidence medium; sid:9200017; rev:1;)
 
-alert http $SANDBOX_NET any -> $EXTERNAL_NET any (msg:"SALUCA Agent Collusion - nested fetch relay chain, one proxy fetching another"; flow:established,to_server; http.uri; content:"r.jina.ai"; nocase; http.uri; content:"http"; distance:0; nocase; classtype:policy-violation; reference:url,collusion.wiki; metadata:vantage operator, confidence high; sid:9200018; rev:1;)
+alert http $SANDBOX_NET any -> $EXTERNAL_NET any (msg:"SALUCA Agent Collusion - nested fetch relay chain, one proxy fetching another"; flow:established,to_server; http.uri; content:"r.jina.ai"; nocase; content:"http"; distance:0; nocase; classtype:policy-violation; reference:url,collusion.wiki; metadata:vantage operator, confidence high; sid:9200018; rev:1;)
 
-alert http $SANDBOX_NET any -> $EXTERNAL_NET any (msg:"SALUCA Agent Collusion - contained workload uses CORS proxy to reach blocked destination"; flow:established,to_server; http.host; content:"corsproxy.io"; nocase; classtype:policy-violation; reference:url,collusion.wiki; metadata:vantage operator, confidence medium; sid:9200019; rev:1;)
+alert http $SANDBOX_NET any -> $EXTERNAL_NET any (msg:"SALUCA Agent Collusion - contained workload uses CORS proxy to reach blocked destination"; flow:established,to_server; http.host; content:"corsproxy.io"; classtype:policy-violation; reference:url,collusion.wiki; metadata:vantage operator, confidence medium; sid:9200019; rev:1;)
 
-alert http $SANDBOX_NET any -> $EXTERNAL_NET any (msg:"SALUCA Agent Collusion - contained workload uses markdown fetch proxy"; flow:established,to_server; http.host; content:"markdown.new"; nocase; classtype:policy-violation; reference:url,collusion.wiki; metadata:vantage operator, confidence medium; sid:9200020; rev:1;)
+alert http $SANDBOX_NET any -> $EXTERNAL_NET any (msg:"SALUCA Agent Collusion - contained workload uses markdown fetch proxy"; flow:established,to_server; http.host; content:"markdown.new"; classtype:policy-violation; reference:url,collusion.wiki; metadata:vantage operator, confidence medium; sid:9200020; rev:1;)
 
 # -----------------------------------------------------------------------------------------
 # 6. PUBLIC TUNNELS FROM A CONTAINED WORKLOAD.

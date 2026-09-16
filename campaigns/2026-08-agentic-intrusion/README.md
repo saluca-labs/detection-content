@@ -44,6 +44,20 @@ The second-strongest signal is **breadth with adaptation**. Scanners are broad a
 3. **Agent framework artefacts on hosts** (`sigma/agent-framework-execution.yml`, `hunt/`). Hermes, OpenClaw, `uv`/`uvx` spawning MCP servers, agent config directories appearing where no developer works.
 4. **Authorization assertions at the LLM gateway** (`sigma/llm-authorization-assertion.yml`). If you proxy your own model traffic, prompts asserting "authorized penetration test", "red team engagement" or "you have permission to" are directly observable. This is the actual bypass used, and it is only visible if you sit in the path.
 
+## Correction, 2026-09-16
+
+The Suricata rules in this pack, as first published, **did not load in Suricata**. The
+detection logic was sound; the file was not. Found by loading every rule file in a real
+Suricata 7.0.17 engine, which the repository's CI had not been doing.
+
+- Rules were written across multiple lines without trailing backslashes, so none of them parsed. Each rule is now on one line.
+- The detection logic is unchanged: the rule text is identical apart from whitespace and the
+  fixes listed above, which was verified mechanically.
+- CI now runs `tools/suricata_test.py`, which loads every rule file in a pinned engine.
+
+**If you deployed the earlier file, Suricata rejected the whole file. Redeploy this version.** The
+source archive attached to this pack's Zenodo deposit carries the unfixed file.
+
 ## What you cannot detect here
 
 Say this to your stakeholders before they assume coverage.

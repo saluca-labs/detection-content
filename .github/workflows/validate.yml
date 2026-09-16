@@ -10,3 +10,16 @@ jobs:
           python-version: '3.12'
       - run: pip install pyyaml yara-python
       - run: python tools/validate.py
+  suricata-engine:
+    # validate.py is a pattern check. This loads every rule file in a real, pinned Suricata
+    # and fires any pack that ships tests/build_test_pcap.py. Added 2026-09-16 after every
+    # multi-line rule file on main was found not to load while validate stayed green.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install scapy
+      - run: docker pull jasonish/suricata:7.0.17
+      - run: python tools/suricata_test.py

@@ -11,7 +11,9 @@ Checks:
   sigma     every YAML document parses and carries the required Sigma fields, ids are UUIDs
             and unique across the WHOLE repository
   yara      compiles, if yara-python is installed; otherwise a brace and rule-header check
-  suricata  balanced parentheses, unique sids, msg/classtype/rev present
+  suricata  balanced parentheses, unique sids, msg/classtype/rev present. This is a PATTERN
+            check only and it was green while no multi-line rule file loaded. The engine
+            check is tools/suricata_test.py, which CI also runs.
   csv       parses and carries the expected columns
   house     no em-dashes anywhere (house style), no obvious secret shapes
 """
@@ -103,7 +105,8 @@ def check_suricata(path: str) -> int:
         if len(sids) != len(set(sids)):
             fail("suricata %s: duplicate sids" % f)
         for b in blocks:
-            if b.count("(") != b.count(")"):
+            bare = b.replace(r"\(", "").replace(r"\)", "")   # escaped parens inside pcre
+            if bare.count("(") != bare.count(")"):
                 fail("suricata %s: unbalanced parens in %s" % (f, b[:60]))
             for req in ("msg:", "classtype:", "rev:"):
                 if req not in b:

@@ -80,7 +80,18 @@ python tools/validate.py                 # whole repo
 python tools/validate.py 2026-09-slug    # one campaign
 ```
 
-Checks Sigma schema and UUID uniqueness **across every campaign**, YARA compilation,
+```bash
+python tools/suricata_test.py            # needs Docker
+```
+
+`suricata_test.py` loads every rule file in a pinned, real Suricata and, if the pack ships
+`tests/build_test_pcap.py`, fires it against a synthetic capture and requires the exact
+expected alert counts. **Write Suricata rules one per line.** Suricata does not join lines
+without a trailing backslash, and on 2026-09-16 every multi-line rule file in this repository
+was found not to load while `validate.py` stayed green. `validate.py` alone is not evidence
+that a rule works.
+
+`validate.py` checks Sigma schema and UUID uniqueness **across every campaign**, YARA compilation,
 Suricata sids and balance, CSV columns, house style, and sweeps for secret-shaped strings.
 This runs in CI too. A pack does not get a DOI until it is green.
 
@@ -218,6 +229,7 @@ TTPs map into `tkhr-threat-intel`, which already holds ATT&CK v19.1 by tactic.
 [ ] every rule marked alert or hunt
 [ ] falsepositives specific on every rule
 [ ] tools/validate.py green
+[ ] tools/suricata_test.py green (engine load, and pcap fire test if the pack has one)
 [ ] root README campaign table updated
 [ ] release tagged, Zenodo deposit published by a human, concept DOI in both READMEs and CITATION.cff
 [ ] article drafted into subcon, cover generated, NOT published by the agent
