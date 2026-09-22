@@ -40,3 +40,7 @@ references:
     title: "The Coordination Substrate: A Detection Engineering Analysis of the September 2026 Unit 42 Agentic Intrusion, and Why Provider-Egress Detection Fails Against Borrowed Inference"
     doi: "10.5281/zenodo.22678061"
     notes: "Companion analysis for campaigns/2026-09-coordination-substrate. Concept DOI, READ off the published record on 2026-09-09 rather than inferred from the version DOI; 10.5281/zenodo.22678062 is the version DOI."
+  - type: report
+    title: "The Quorum Signature: A Detection Engineering Analysis of CLOSEDQUORUM, and Why the Best Signal in LLM-Tasked Command and Control Is Scheduled to Disappear"
+    doi: "10.5281/zenodo.22903268"
+    notes: "Companion analysis for campaigns/2026-09-llm-tasked-c2. Concept DOI, READ off the published record's conceptdoi field on 2026-09-22 and confirmed resolving, not inferred from the version DOI; 10.5281/zenodo.22903269 is the version DOI."

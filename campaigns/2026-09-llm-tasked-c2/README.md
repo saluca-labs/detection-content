@@ -6,7 +6,8 @@ Defensive only. Apache-2.0. Part of [saluca-labs/detection-content](https://gith
 
 **Paper:** *The Quorum Signature: A Detection Engineering Analysis of CLOSEDQUORUM, and Why the Best Signal in LLM-Tasked Command and Control Is Scheduled to Disappear*
 Local copies: [`quorum-signature-v1.0.pdf`](quorum-signature-v1.0.pdf) - [`.md`](quorum-signature-v1.0.md)
-Deposited as a Zenodo draft and awaiting publication by the author. The concept DOI goes here, in the root README table and in `CITATION.cff` once it is live.
+[10.5281/zenodo.22903268](https://doi.org/10.5281/zenodo.22903268) - [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22903268.svg)](https://doi.org/10.5281/zenodo.22903268)
+Published 22 September 2026. That is the CONCEPT DOI and resolves to the newest revision; 10.5281/zenodo.22903269 is the version DOI and will not follow a correction.
 
 ---
 
