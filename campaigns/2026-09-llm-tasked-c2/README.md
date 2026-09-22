@@ -4,7 +4,9 @@ Detection content for **malware with no command-and-control server**, which asks
 
 Defensive only. Apache-2.0. Part of [saluca-labs/detection-content](https://github.com/saluca-labs/detection-content).
 
-**Paper:** not yet deposited. This README is the analysis until it is.
+**Paper:** *The Quorum Signature: A Detection Engineering Analysis of CLOSEDQUORUM, and Why the Best Signal in LLM-Tasked Command and Control Is Scheduled to Disappear*
+Local copies: [`quorum-signature-v1.0.pdf`](quorum-signature-v1.0.pdf) - [`.md`](quorum-signature-v1.0.md)
+Deposited as a Zenodo draft and awaiting publication by the author. The concept DOI goes here, in the root README table and in `CITATION.cff` once it is live.
 
 ---
 

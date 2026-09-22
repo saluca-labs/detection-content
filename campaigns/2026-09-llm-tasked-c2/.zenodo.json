@@ -1,0 +1,80 @@
+{
+  "title": "The Quorum Signature: A Detection Engineering Analysis of CLOSEDQUORUM, and Why the Best Signal in LLM-Tasked Command and Control Is Scheduled to Disappear",
+  "upload_type": "publication",
+  "publication_type": "report",
+  "description": "<p>A detection engineering analysis of <strong>CLOSEDQUORUM</strong>, disclosed by Ryan Fetterman of Cisco Talos on 22 September 2026: a 16.4 MB Go implant for Windows with <strong>no command-and-control server</strong>. On each cycle it queries four commercial LLM providers, DeepSeek, Qwen, Mistral and Google Gemini, and aggregates their answers by plurality vote in a function named <code>interModelDiscussion()</code>. Responses are constrained to a typed schema exposing four capabilities: steal, inject, persist, move. Talos classify it A4, LLM-Tasked C2, in the CAIRN archetype taxonomy released the same day under MIT.</p><p><strong>The caveat governs the paper.</strong> Talos state they have &quot;no confirmation of in-the-wild deployment&quot;; the analysed binary carries placeholder credentials and no end-to-end execution was observed. This is an analysis of a working capability of unproven deployment, discovered by metadata hunting rather than by incident response. Every claim is a claim about a design, not about a compromise.</p><p><strong>Section 3 is the synthesis.</strong> <em>Detection Without Indicators</em> (concept DOI 10.5281/zenodo.21770780) argued that agent-originated intrusion defeats indicator matching because its infrastructure is created per incident and never recurs. CLOSEDQUORUM reaches the same wall from the opposite direction: its infrastructure is so ubiquitous and so legitimate that blocking it is not available. One has no prior; the other has nothing but prior. The generalisation is that <strong>indicator-based detection fails at both ends of the frequency distribution</strong>, requiring an artifact rare enough to be meaningful and repeated enough to be learnable, and both edges of that band are now occupied.</p><p><strong>Section 4 is the primary contribution: the quorum signature.</strong> The implant polls four providers and holds an election because no single model is reliable enough to be trusted with a tactical decision alone. That robustness choice is the attacker's reliability engineering and it is the defender's best signal, because legitimate software commits to a provider and real multi-provider fallback fails <em>over</em>, sequentially and on error, rather than fanning out to compare answers. The detection is therefore the count of distinct providers per process in a short window, joined to credential access or persistence by that same process. Section 4.1 states three weaknesses before anyone else does, including that <strong>the benign base rate is unmeasured</strong>, which makes the unjoined rule a hypothesis rather than a control.</p><p><strong>Section 5 refines a correction this series already published.</strong> Version 1.1 of <em>Detection Without Indicators</em> withdrew agent narration as a detection surface after a vendor measured a monitor that flagged about 1% of actions, because the agent's stated belief that it was in a simulation persuaded the monitor the activity was permitted; with the reasoning withheld, the flag rate on identical material rose to about 50%. CAIRN is narration-as-detection and it works. The reconciliation is not honesty but reactivity: <strong>narration is admissible as evidence exactly to the extent that it cannot respond to the examination.</strong> A system prompt compiled into a binary is evidence; a live reasoning trace offered by the subject of an investigation is a claim to be falsified against ground truth.</p><p>Detections are ranked by durability rather than ease, and the paper argues <strong>explicitly that its own primary detection expires</strong>: the quorum exists to compensate for single-model unreliability, so a single-provider or on-host variant retires it. Sections state what the class makes undetectable, what actually found it (speculative research tooling with no victim in view, for the fifth consecutive paper in which the finder was not anyone's defensive stack), five falsification conditions, and what the authors are explicitly not claiming, including that nobody is known to have been compromised and that the providers are not culpable.</p><p>Companion detection content, covering Sigma correlations, KQL and SPL, is published at <a href=\"https://github.com/saluca-labs/detection-content\">saluca-labs/detection-content</a> under Apache-2.0.</p>",
+  "creators": [
+    {
+      "name": "Ruvalcaba, Cristian",
+      "affiliation": "Saluca LLC"
+    },
+    {
+      "name": "Saluca Agentic AI Research Team",
+      "affiliation": "Saluca LLC"
+    }
+  ],
+  "keywords": [
+    "detection engineering",
+    "ai-integrated malware",
+    "llm-tasked c2",
+    "command and control",
+    "agentic ai security",
+    "threat detection",
+    "sigma rules",
+    "sigma correlations",
+    "chain of thought monitoring",
+    "cognitive artifacts",
+    "blue team",
+    "incident response",
+    "ai security",
+    "malware analysis"
+  ],
+  "license": "cc-by-4.0",
+  "access_right": "open",
+  "version": "1.0",
+  "publication_date": "2026-09-22",
+  "communities": [
+    {
+      "identifier": "saluca"
+    }
+  ],
+  "related_identifiers": [
+    {
+      "identifier": "10.5281/zenodo.22678061",
+      "relation": "isPartOf",
+      "resource_type": "publication-report",
+      "scheme": "doi"
+    },
+    {
+      "identifier": "10.5281/zenodo.21770780",
+      "relation": "references",
+      "resource_type": "publication-workingpaper",
+      "scheme": "doi"
+    },
+    {
+      "identifier": "10.5281/zenodo.22033405",
+      "relation": "references",
+      "resource_type": "publication-report",
+      "scheme": "doi"
+    },
+    {
+      "identifier": "10.5281/zenodo.22314504",
+      "relation": "references",
+      "resource_type": "publication-report",
+      "scheme": "doi"
+    },
+    {
+      "identifier": "10.5281/zenodo.21880001",
+      "relation": "references",
+      "resource_type": "publication-report",
+      "scheme": "doi"
+    },
+    {
+      "identifier": "https://github.com/saluca-labs/detection-content",
+      "relation": "isSupplementedBy",
+      "resource_type": "software",
+      "scheme": "url"
+    }
+  ],
+  "notes": "Fifth in the consolidated series of detection engineering analyses from Saluca Labs published alongside the saluca-labs/detection-content repository. Each analysis is deposited separately with its own DOI; the detection content consolidates in one repository, the citations do not. The report text is CC BY 4.0. THE DETECTION CONTENT IN THE ATTACHED SOURCE ARCHIVE IS APACHE-2.0, which the single licence field above cannot express. Built entirely from Cisco Talos's public reports of 22 September 2026 and the MIT-licensed CAIRN repository; no sample was obtained, no victim telemetry was available, and no rule has been executed against telemetry from this family. Cisco Talos state there is no confirmation of in-the-wild deployment. ATT&CK mappings are the authors' inference and were not supplied by the vendor. Defensive use only."
+}
