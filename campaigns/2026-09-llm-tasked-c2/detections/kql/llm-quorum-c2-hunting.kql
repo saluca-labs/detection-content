@@ -1,0 +1,150 @@
+// LLM-tasked C2 (CLOSEDQUORUM archetype A4) - Defender / Sentinel advanced hunting.
+//
+// Companion to detections/sigma/llm-quorum-c2.yml. The Sigma correlations express the logic;
+// these are the queries you can actually paste and run today, because distinct-count-over-window
+// is native here and awkward in Sigma.
+//
+// THE POINT, RESTATED. Do not hunt for the endpoint. api.deepseek.com is a legitimate destination
+// on a modern workstation, and blocking it is not available to most estates. Hunt for one process
+// polling SEVERAL providers in a short window, which is what holding a vote looks like from the
+// outside. Then join that to what the vote produced.
+//
+// Ref: https://blog.talosintelligence.com/the-closed-quorum-inside-the-first-reported-autonomous-ai-c2-implant/
+// Author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team, 2026-09-22
+// Apache-2.0. Defensive use only.
+
+// ---------------------------------------------------------------------------------------------
+// Shared: what counts as a model provider. Edit this list; it is the thing that goes stale.
+// ---------------------------------------------------------------------------------------------
+let LLMProviders = dynamic([
+    "api.deepseek.com", "api.mistral.ai", "openrouter.ai", "generativelanguage.googleapis.com",
+    "dashscope.aliyuncs.com", "api.anthropic.com", "api.openai.com", "api.groq.com",
+    "api.together.xyz", "api.x.ai", "api.cohere.ai", "api.perplexity.ai"
+]);
+// Software whose JOB is to talk to several providers. These are true positives for the logic and
+// false positives for you. Keep this list short and justify every entry in your own repo.
+let KnownRouters = dynamic([
+    "litellm.exe", "ollama.exe", "lm-studio.exe", "jan.exe", "msedge.exe", "chrome.exe",
+    "firefox.exe", "code.exe", "cursor.exe"
+]);
+
+// ---------------------------------------------------------------------------------------------
+// QUERY 1 - The quorum. One process, several providers, ten minutes.
+// Start here. On a healthy estate this returns a handful of rows and they are all your own tools.
+// ---------------------------------------------------------------------------------------------
+DeviceNetworkEvents
+| where Timestamp > ago(14d)
+| where isnotempty(RemoteUrl)
+| where RemoteUrl has_any (LLMProviders)
+| where InitiatingProcessFileName !in~ (KnownRouters)
+// mv-expand against the list is the readable way to name WHICH provider matched. A regex
+// extract looks cleverer and silently mislabels anything not shaped like api.<vendor>.<tld>.
+| mv-expand Provider = LLMProviders to typeof(string)
+| where RemoteUrl has Provider
+| summarize
+    DistinctProviders = dcount(Provider),
+    Providers        = make_set(Provider, 10),
+    Calls            = count(),
+    FirstSeen        = min(Timestamp),
+    LastSeen         = max(Timestamp)
+    by DeviceName, InitiatingProcessFileName, InitiatingProcessFolderPath, InitiatingProcessId,
+       Window = bin(Timestamp, 10m)
+| where DistinctProviders >= 2
+| order by DistinctProviders desc, Calls desc
+
+// ---------------------------------------------------------------------------------------------
+// QUERY 2 - Quorum joined to capability. This is the alert-worthy one.
+//
+// CLOSEDQUORUM constrains its model responses to four verbs: steal, inject, persist, move. The
+// first three are observable on the host, so the malware's own schema tells you what to join to.
+// ---------------------------------------------------------------------------------------------
+let Window = 30m;
+let Quorum =
+    DeviceNetworkEvents
+    | where Timestamp > ago(14d)
+    | where RemoteUrl has_any (LLMProviders)
+    | where InitiatingProcessFileName !in~ (KnownRouters)
+    | mv-expand Provider = LLMProviders to typeof(string)
+    | where RemoteUrl has Provider
+    | summarize DistinctProviders = dcount(Provider),
+                Providers = make_set(Provider, 10),
+                QuorumTime = min(Timestamp)
+      by DeviceId, DeviceName, InitiatingProcessId, InitiatingProcessFileName,
+         Bucket = bin(Timestamp, Window)
+    | where DistinctProviders >= 2;
+let Capability =
+    DeviceEvents
+    | where Timestamp > ago(14d)
+    | where (ActionType in ("OpenProcessApiCall", "ReadProcessMemoryApiCall") and FileName =~ "lsass.exe")
+         or ActionType in ("CreateRemoteThreadApiCall", "ProcessPrimaryTokenModified")
+         or (ActionType == "WmiBindEventFilterToConsumer")
+    | project DeviceId, DeviceName, CapTime = Timestamp, CapAction = ActionType,
+              InitiatingProcessId, InitiatingProcessFileName, InitiatingProcessFolderPath;
+Quorum
+| join kind=inner Capability on DeviceId, InitiatingProcessId
+| where CapTime between (QuorumTime .. (QuorumTime + Window))
+| project DeviceName, InitiatingProcessFileName, InitiatingProcessFolderPath1,
+          Providers, DistinctProviders, QuorumTime, CapAction, CapTime
+| order by QuorumTime desc
+
+// ---------------------------------------------------------------------------------------------
+// QUERY 3 - Beacon cadence. Talos reports execution at randomised 5-15 minute intervals.
+//
+// READ THE CAVEAT. Jitter across a 5-15 minute range is genuinely harder to see than a fixed
+// beacon, and this query WILL surface legitimate polling software: update checkers, telemetry
+// agents, sync clients. Treat it as a narrowing tool applied AFTER query 1 gives you a candidate
+// process, not as a standalone hunt. Run it broadly and you will drown.
+// ---------------------------------------------------------------------------------------------
+DeviceNetworkEvents
+| where Timestamp > ago(7d)
+| where RemoteUrl has_any (LLMProviders)
+| where InitiatingProcessFileName !in~ (KnownRouters)
+| sort by DeviceName asc, InitiatingProcessId asc, Timestamp asc
+| extend PrevTime = prev(Timestamp), PrevProc = prev(InitiatingProcessId)
+| where InitiatingProcessId == PrevProc
+| extend GapSeconds = datetime_diff('second', Timestamp, PrevTime)
+| where GapSeconds between (280 .. 920)          // 5 to 15 minutes, with slack at both ends
+| summarize Beacons = count(),
+            MedianGap = percentile(GapSeconds, 50),
+            StdDev = stdev(GapSeconds),
+            Span = max(Timestamp) - min(Timestamp)
+  by DeviceName, InitiatingProcessFileName, InitiatingProcessId
+| where Beacons >= 6                              // an hour or more of sustained cadence
+| order by Beacons desc
+
+// ---------------------------------------------------------------------------------------------
+// QUERY 4 - Discord webhook exfiltration from a process that is not Discord.
+//
+// FORENSIC NOTE. The payload is AES-256-GCM under a key derived from the current date. If you
+// hold historical capture, the ciphertext is very likely recoverable. Preserve the PCAP before
+// you remediate the host.
+// ---------------------------------------------------------------------------------------------
+DeviceNetworkEvents
+| where Timestamp > ago(30d)
+| where RemoteUrl has "discord" and RemoteUrl has "/api/webhooks/"
+| where InitiatingProcessFileName !~ "Discord.exe"
+| summarize Posts = count(), FirstSeen = min(Timestamp), LastSeen = max(Timestamp),
+            Urls = make_set(RemoteUrl, 5)
+  by DeviceName, InitiatingProcessFileName, InitiatingProcessFolderPath
+| order by Posts desc
+
+// ---------------------------------------------------------------------------------------------
+// QUERY 5 - Known CLOSEDQUORUM builds. Six hashes, seven days of development.
+//
+// These are development builds, and Talos states there is NO confirmed in-the-wild deployment.
+// A hit here is notable and rare; an absence proves nothing at all. Do not report "we checked the
+// hashes and we are clean" as coverage of this technique. The hashes are the least durable thing
+// in this file and the behavioural queries above are the actual answer.
+// ---------------------------------------------------------------------------------------------
+let ClosedQuorumHashes = dynamic([
+    "250d4fa37488af9b025333fa17705573d721467b203765bc360890b4f5a90cd7",
+    "c4dc171f2513fcaf9d5ecc815a94aee4063b213ab380f80bd3ac422dee5205a7",
+    "c13cea04f598e2b0c248d603a6e31bd13aabb64d8149c1b6a77b64e0b983a86f",
+    "f5f1f8c3e7b883793800ab6ccf21b3e60bd0730f300b4595fe74a33adc17a63c",
+    "5191cf625dfc209a347f137b50aea199e82040fd5ee9086fb3e2de73c133f3cb",
+    "eddbd0ecf7195d38fefae5b9d393abfa79e6f3f94bde19308ecef130a05a42e5"
+]);
+union DeviceFileEvents, DeviceProcessEvents, DeviceImageLoadEvents
+| where Timestamp > ago(90d)
+| where SHA256 in~ (ClosedQuorumHashes)
+| project Timestamp, DeviceName, FileName, FolderPath, SHA256, InitiatingProcessFileName

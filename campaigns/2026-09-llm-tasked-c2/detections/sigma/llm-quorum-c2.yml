@@ -1,0 +1,254 @@
+# Sigma - LLM-tasked C2: the quorum signature.
+#
+# WHY THIS FILE EXISTS, GIVEN llm-api-egress-from-server.yml ALREADY LISTS THESE DOMAINS.
+#
+# CLOSEDQUORUM (Cisco Talos, 22 September 2026) is a Windows implant with no C2 server. It asks
+# DeepSeek, Qwen, Mistral and Gemini what to do next and takes the plurality answer. Its three
+# observed endpoints - api.deepseek.com, openrouter.ai, api.mistral.ai - are ALREADY in the
+# server-egress rule in this pack, so on a domain controller or an application server that rule
+# catches it today and this file adds nothing.
+#
+# The gap is the workstation. CLOSEDQUORUM is a credential stealer: LSASS, process injection, WMI
+# persistence, Discord exfiltration. It lives where people work, and the server rule's own README
+# says plainly that on a workstation LLM API egress is "a HUNT everywhere else" because developers
+# generate it constantly. One process talking to one model provider on a laptop in 2026 is noise.
+#
+# So the discriminator cannot be the endpoint. It has to be the QUORUM.
+#
+# THE ONE IDEA HERE. The implant queries FOUR providers and votes, because no single model is
+# reliable enough to be trusted with a tactical decision alone. That is the attacker's reliability
+# engineering, and it is the defender's signal: legitimate software picks a provider. It does not
+# poll four of them in the same minute and hold an election. Talos reached the same place from
+# their side - "Far fewer [legitimate applications] should contact several of them while also
+# accessing LSASS, injecting into suspended processes, or creating WMI persistence."
+#
+# THIS DETECTION HAS A SHELF LIFE AND YOU SHOULD PLAN FOR THAT. The quorum exists to compensate
+# for single-model unreliability. As models improve, or as open-weight models become good enough
+# to run on the host, the quorum collapses to one call or to no network call at all, and
+# everything below stops working. It is worth deploying now and worth distrusting later. Nothing
+# in this pack should be read as durable coverage of LLM-tasked C2 as a class.
+#
+# Ref: https://blog.talosintelligence.com/the-closed-quorum-inside-the-first-reported-autonomous-ai-c2-implant/
+# Ref: https://github.com/Cisco-Talos/Cognitive-Artifact-Intelligence-Research-Network
+# Author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team, 2026-09-22
+
+title: LLM Provider Endpoint Resolved
+id: 0d3a6b18-4f7c-4a0e-9c2b-6e1f5a77d410
+status: experimental
+description: |
+  Base rule. A process resolved a public LLM inference endpoint. On its own this is near
+  worthless on a workstation and is NOT intended to alert. It exists so the correlations below
+  have something to count.
+
+  Deploy this as a filter or a low-noise log stream, not as a detection.
+references:
+    - https://blog.talosintelligence.com/the-closed-quorum-inside-the-first-reported-autonomous-ai-c2-implant/
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-09-22
+tags:
+    - attack.command-and-control
+    - attack.t1071.001
+    - attack.t1102
+logsource:
+    category: dns_query
+    product: windows
+detection:
+    providers:
+        QueryName|contains:
+            - 'api.deepseek.com'
+            - 'api.mistral.ai'
+            - 'openrouter.ai'
+            - 'generativelanguage.googleapis.com'
+            - 'dashscope.aliyuncs.com'
+            - 'api.anthropic.com'
+            - 'api.openai.com'
+            - 'api.groq.com'
+            - 'api.together.xyz'
+            - 'api.x.ai'
+            - 'api.cohere.ai'
+            - 'api.perplexity.ai'
+    condition: providers
+falsepositives:
+    - Constant on developer workstations. That is the point; this rule is a counter input.
+level: informational
+---
+# The actual detection. Distinct providers, one process, short window.
+
+title: LLM Quorum - Single Process Polls Multiple Model Providers
+id: 7c41e8f2-9b3d-4e56-8a17-2f0c94bd6e83
+status: experimental
+description: |
+  One process resolved TWO OR MORE DISTINCT public LLM provider endpoints inside ten minutes.
+
+  Normal software commits to a provider. It is configured with one API key, against one SDK,
+  and it calls one host. Multi-provider fallback exists in real applications, but it fails OVER,
+  sequentially and on error, rather than fanning out to several providers at once to compare
+  answers. CLOSEDQUORUM fans out by design, because it is holding a vote.
+
+  Tune the threshold before enabling. Two is deliberately aggressive and will catch LLM gateway
+  software, local AI routers and some IDE assistants. Three is quieter and still catches the
+  four-provider design described by Talos. Raise it if you run an LLM proxy; that class of
+  software is a true positive for the logic and a false positive for your purposes.
+references:
+    - https://blog.talosintelligence.com/the-closed-quorum-inside-the-first-reported-autonomous-ai-c2-implant/
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-09-22
+tags:
+    - attack.command-and-control
+    - attack.t1102
+    - attack.t1071.001
+correlation:
+    type: value_count
+    rules:
+        - 0d3a6b18-4f7c-4a0e-9c2b-6e1f5a77d410
+    group-by:
+        - Computer
+        - Image
+    timespan: 10m
+    condition:
+        field: QueryName
+        gte: 2
+falsepositives:
+    - LLM gateways and routers such as LiteLLM, OpenRouter clients, Portkey, Helicone and
+      aisuite, and anything else whose job is to sit in front of several providers. These are
+      true positives for the logic. Allowlist by image path and record WHY.
+    - Model evaluation and benchmarking tooling, which compares providers by design.
+    - Browsers. If your DNS telemetry attributes queries to the browser process rather than to the
+      page, a user with two AI tabs open will fire this. Exclude browser images and accept that
+      you have lost coverage of browser-delivered variants.
+    - Security products that submit to multiple vendor models.
+level: medium
+---
+# The high-confidence version: quorum plus a capability the malware actually used.
+
+title: LLM Quorum Followed By Credential Access Or Persistence
+id: b58f7a03-1c94-4d72-9e60-3a8d5f21c7be
+status: experimental
+description: |
+  A process that polled multiple LLM providers ALSO accessed LSASS, injected into another
+  process, or created WMI persistence, inside thirty minutes.
+
+  This is the rule to alert on. The quorum rule alone tells you something is talking to several
+  model providers, which has honest benign causes. Joining it to a capability the implant is
+  documented to use removes almost all of them: an LLM gateway does not read LSASS.
+
+  CLOSEDQUORUM constrains its model responses to four verbs - steal, inject, persist, move - and
+  the first three are directly observable on the host. That typed schema is a gift to defenders:
+  the malware's own design enumerates the post-decision behaviour to watch for.
+
+  REQUIRES Sysmon or equivalent. Without EventID 10 and the WMI events this rule cannot fire and
+  will sit green forever, which is worse than not deploying it. Confirm your telemetry produces
+  these events before you turn it on.
+references:
+    - https://blog.talosintelligence.com/the-closed-quorum-inside-the-first-reported-autonomous-ai-c2-implant/
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-09-22
+tags:
+    - attack.command-and-control
+    - attack.t1102
+    - attack.credential-access
+    - attack.t1003.001
+    - attack.defense-evasion
+    - attack.t1055
+    - attack.persistence
+    - attack.t1546.003
+correlation:
+    type: temporal
+    rules:
+        - 7c41e8f2-9b3d-4e56-8a17-2f0c94bd6e83
+        - 3e9c1a47-8d52-4b06-a91f-7c4e0b2d5f68
+    group-by:
+        - Computer
+        - Image
+    timespan: 30m
+falsepositives:
+    - An EDR agent or credential manager that both reads LSASS and calls model providers. Rare,
+      but confirm before excluding, and exclude by full image path.
+level: high
+---
+# Capability leg of the correlation above. Not useful as a standalone alert; every estate
+# already has coverage for these three, and this is deliberately broader and noisier than a
+# dedicated rule would be, because its job is to be JOINED rather than to fire.
+
+title: Credential Access Or Persistence Capability Observed
+id: 3e9c1a47-8d52-4b06-a91f-7c4e0b2d5f68
+status: experimental
+description: |
+  LSASS access, remote thread creation, or WMI event subscription persistence. Broad on purpose.
+  Use your existing tuned rules for these techniques as alerts; use this one only as the second
+  leg of the quorum correlation.
+references:
+    - https://blog.talosintelligence.com/the-closed-quorum-inside-the-first-reported-autonomous-ai-c2-implant/
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-09-22
+tags:
+    - attack.credential-access
+    - attack.t1003.001
+    - attack.t1055
+    - attack.t1546.003
+logsource:
+    product: windows
+    service: sysmon
+detection:
+    lsass_access:
+        EventID: 10
+        TargetImage|endswith: '\lsass.exe'
+        GrantedAccess|contains:
+            - '0x1010'
+            - '0x1410'
+            - '0x143a'
+            - '0x1438'
+            - '0x1f0fff'
+    remote_thread:
+        EventID: 8
+    wmi_persistence:
+        EventID:
+            - 19
+            - 20
+            - 21
+    condition: lsass_access or remote_thread or wmi_persistence
+falsepositives:
+    - Everything. This rule is not deployable alone and is not meant to be.
+level: informational
+---
+# Exfiltration leg. Independent of the quorum, and worth having on its own.
+
+title: Discord Webhook Egress From Non-Chat Process
+id: f2b6d94c-05a7-4e83-b1d0-8c37e6a1490b
+status: experimental
+description: |
+  A process that is not a chat client posted to a Discord webhook endpoint.
+
+  CLOSEDQUORUM exfiltrates stolen credentials to Discord webhooks, encrypted with AES-256-GCM
+  under a key derived from the current date. Discord webhooks are a long-standing commodity
+  exfiltration channel and this rule is not specific to this family, which is a feature.
+
+  FORENSIC NOTE. The date-derived key means captured ciphertext is recoverable if you know the
+  day it was sent. If you find this traffic in historical capture, the exfiltrated data is very
+  likely readable. Preserve the PCAP before you remediate.
+references:
+    - https://blog.talosintelligence.com/the-closed-quorum-inside-the-first-reported-autonomous-ai-c2-implant/
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-09-22
+tags:
+    - attack.exfiltration
+    - attack.t1567
+logsource:
+    category: proxy
+detection:
+    webhook:
+        c-uri|contains:
+            - 'discord.com/api/webhooks/'
+            - 'discordapp.com/api/webhooks/'
+            - 'ptb.discord.com/api/webhooks/'
+            - 'canary.discord.com/api/webhooks/'
+    chat_clients:
+        cs-user-agent|contains:
+            - 'Discord'
+    condition: webhook and not chat_clients
+falsepositives:
+    - CI pipelines, monitoring and alerting integrations that post build or alert notifications to
+      Discord. Extremely common. Allowlist your own by source host, not by user agent, because the
+      user agent is attacker-controlled.
+    - Game launchers and modding tools.
+level: medium

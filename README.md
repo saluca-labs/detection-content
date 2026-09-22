@@ -16,6 +16,7 @@ Defensive only. Apache-2.0.
 | [2026-09-agent-collusion](campaigns/2026-09-agent-collusion/) | May-Jul 2026 | Sandboxed agents that were allowed to read the internet and blocked from writing to it wrote ~18,000 posts to public wikis anyway | behavioural only | [10.5281/zenodo.22314504](https://doi.org/10.5281/zenodo.22314504) |
 | [2026-09-coordination-substrate](campaigns/2026-09-coordination-substrate/) | Sep 2026 | Multi-agent intrusion seen from inside the victim estate: the state files orchestration has to write down, and the attacker repurposing the victim's own inference endpoints | behavioural only | [10.5281/zenodo.22678061](https://doi.org/10.5281/zenodo.22678061) |
 | [2026-09-gulf-conflict-cyber](campaigns/2026-09-gulf-conflict-cyber/) | Jan-Sep 2026 | Reported Iran-nexus activity against UAE targets and its spread: internet-exposed PLCs (CISA AA26-097A), camera exploitation, Gulf-themed phishing, bulk destructive actions. Attribution is the sources' | atomic + behavioural | none (detection content only) |
+| [2026-09-llm-tasked-c2](campaigns/2026-09-llm-tasked-c2/) | Sep 2026 | Malware with no C2 server: CLOSEDQUORUM polls four commercial LLM providers and takes the plurality answer. The C2 is infrastructure you cannot block, so the detection is the quorum rather than the endpoint | atomic (of limited use) + behavioural | not yet deposited |
 
 Cross-campaign hunt scripts live in [`hunt/`](hunt/). They tend to outlive the campaign that
 prompted them, so they are not filed under one.
