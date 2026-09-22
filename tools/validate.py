@@ -9,7 +9,10 @@ rule cannot reach a Zenodo deposit with a DOI attached to it.
 
 Checks:
   sigma     every YAML document parses and carries the required Sigma fields, ids are UUIDs
-            and unique across the WHOLE repository
+            and unique across the WHOLE repository. CORRELATION documents (Sigma correlations
+            spec) are checked against their own field set, because a correlation legitimately
+            has neither logsource nor detection, and every rule id they reference must resolve
+            to a rule that exists somewhere in the repository
   yara      compiles, if yara-python is installed; otherwise a brace and rule-header check
   suricata  balanced parentheses, unique sids, msg/classtype/rev present. This is a PATTERN
             check only and it was green while no multi-line rule file loaded. The engine
@@ -28,6 +31,12 @@ import uuid
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SIGMA_REQUIRED = {"title", "id", "status", "description", "logsource", "detection", "level"}
+# A Sigma CORRELATION aggregates other rules and has no logsource or detection of its own.
+# Added 2026-09-22 for the llm-tasked-c2 pack, whose core detection is "one process reached N
+# distinct providers", which base Sigma cannot express. Before this, the validator failed every
+# correlation for missing the two fields a correlation is defined as not having.
+SIGMA_CORRELATION_REQUIRED = {"title", "id", "correlation"}
+SIGMA_CORRELATION_TYPES = {"event_count", "value_count", "temporal", "temporal_ordered"}
 IOC_COLUMNS = {"type", "value", "context", "confidence", "source", "notes"}
 # Pre-consolidation schema, kept working because its CSV is attached to a published DOI.
 LEGACY_IOC_COLUMNS = {"campaign", "type", "indicator", "context", "source"}
@@ -35,6 +44,9 @@ LEGACY_IOC_COLUMNS = {"campaign", "type", "indicator", "context", "source"}
 problems: list[str] = []
 notes: list[str] = []
 seen_ids: dict[str, str] = {}
+# (referenced id, referring title, file) collected during the sweep and resolved at the end,
+# because a correlation may legitimately reference a rule in a file parsed later.
+correlation_refs: list[tuple[str, str, str]] = []
 
 
 def fail(msg: str) -> None:
@@ -62,10 +74,29 @@ def check_sigma(path: str) -> int:
             fail("sigma parse %s: %s" % (f, exc))
             continue
         for d in docs:
-            missing = SIGMA_REQUIRED - set(d)
+            is_corr = "correlation" in d
+            required = SIGMA_CORRELATION_REQUIRED if is_corr else SIGMA_REQUIRED
+            missing = required - set(d)
             if missing:
-                fail("sigma %s :: %s missing %s" % (f, d.get("title", "?"), sorted(missing)))
+                kind = "correlation" if is_corr else "rule"
+                fail("sigma %s :: %s (%s) missing %s"
+                     % (f, d.get("title", "?"), kind, sorted(missing)))
                 continue
+            if is_corr:
+                corr = d["correlation"] or {}
+                ctype = corr.get("type")
+                if ctype not in SIGMA_CORRELATION_TYPES:
+                    fail("sigma %s :: %s unknown correlation type %r"
+                         % (f, d.get("title", "?"), ctype))
+                if not corr.get("timespan"):
+                    fail("sigma %s :: %s correlation has no timespan"
+                         % (f, d.get("title", "?")))
+                refs = corr.get("rules") or []
+                if not refs:
+                    fail("sigma %s :: %s correlation references no rules"
+                         % (f, d.get("title", "?")))
+                for r in refs:
+                    correlation_refs.append((str(r), d.get("title", "?"), f))
             rid = str(d["id"])
             try:
                 uuid.UUID(rid)
@@ -171,6 +202,11 @@ def main() -> int:
         s, y, u, i = check_sigma(c), check_yara(c), check_suricata(c), check_iocs(c)
         check_house(c)
         print("  %-34s sigma=%-3d yara=%-3d suricata=%-3d iocs=%d" % (name, s, y, u, i))
+    # Resolved here rather than inline: a correlation may reference a rule in a file that had
+    # not been parsed yet when the correlation was read.
+    for ref, title, f in correlation_refs:
+        if ref not in seen_ids:
+            fail("sigma %s :: correlation %r references unknown rule id %s" % (f, title, ref))
     print()
     for n in dict.fromkeys(notes):
         print("  note: %s" % n)

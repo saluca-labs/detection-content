@@ -1,0 +1,115 @@
+* LLM-tasked C2 (CLOSEDQUORUM archetype A4) - Splunk.
+*
+* Companion to detections/sigma/llm-quorum-c2.yml and detections/kql/llm-quorum-c2-hunting.kql.
+*
+* Written against Sysmon through Splunk_TA_microsoft_sysmon. If you normalise to CIM instead, the
+* Network_Traffic and Endpoint.Processes datamodels carry the same fields under different names;
+* the logic survives the translation, the field names do not.
+*
+* Ref: https://blog.talosintelligence.com/the-closed-quorum-inside-the-first-reported-autonomous-ai-c2-implant/
+* Author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team, 2026-09-22
+* Apache-2.0. Defensive use only.
+
+
+* ============================================================================================
+* SEARCH 1 - The quorum. One process, two or more distinct providers, ten minutes.
+*
+* This is the whole idea. Legitimate software commits to a provider; it does not poll four of
+* them and hold an election. Start here, look at what comes back, and allowlist your own tools
+* by full image path before you promote anything to an alert.
+* ============================================================================================
+
+index=sysmon (EventCode=22 OR EventCode=3)
+| eval dest_host=coalesce(QueryName, DestinationHostname)
+| search dest_host IN ("*api.deepseek.com*", "*api.mistral.ai*", "*openrouter.ai*",
+                       "*generativelanguage.googleapis.com*", "*dashscope.aliyuncs.com*",
+                       "*api.anthropic.com*", "*api.openai.com*", "*api.groq.com*",
+                       "*api.together.xyz*", "*api.x.ai*", "*api.cohere.ai*",
+                       "*api.perplexity.ai*")
+| rex field=dest_host "(?<provider>api\.[a-z0-9\-]+\.[a-z]+|openrouter\.ai|generativelanguage\.googleapis\.com|dashscope\.aliyuncs\.com)"
+| eval proc=lower(mvindex(split(Image,"\\"), -1))
+* Software whose job is to front several providers. True positives for the logic, false
+* positives for you. Keep this list short and justify each entry in your own repo.
+| search NOT proc IN ("litellm.exe","ollama.exe","lm-studio.exe","jan.exe","msedge.exe",
+                      "chrome.exe","firefox.exe","code.exe","cursor.exe")
+| bin _time span=10m
+| stats dc(provider) AS distinct_providers,
+        values(provider) AS providers,
+        count AS calls,
+        min(_time) AS first_seen,
+        max(_time) AS last_seen
+        BY _time, Computer, Image, ProcessId
+| where distinct_providers >= 2
+| convert ctime(first_seen) ctime(last_seen)
+| sort - distinct_providers - calls
+
+
+* ============================================================================================
+* SEARCH 2 - Quorum joined to capability. This is the alert.
+*
+* CLOSEDQUORUM constrains model responses to four verbs - steal, inject, persist, move. Three of
+* them are observable on the host, so the malware's own schema names what to join to.
+*
+* REQUIRES Sysmon EventCode 10 (ProcessAccess) and 19/20/21 (WMI). If your Sysmon config
+* excludes them this search returns nothing forever and looks healthy doing it. Verify those
+* events exist in your index BEFORE you schedule this.
+* ============================================================================================
+
+index=sysmon (EventCode=22 OR EventCode=3 OR EventCode=10 OR EventCode=8 OR EventCode=19 OR EventCode=20 OR EventCode=21)
+| eval dest_host=coalesce(QueryName, DestinationHostname)
+| eval is_llm=if(match(dest_host, "api\.deepseek\.com|api\.mistral\.ai|openrouter\.ai|generativelanguage\.googleapis\.com|dashscope\.aliyuncs\.com|api\.anthropic\.com|api\.openai\.com|api\.groq\.com|api\.together\.xyz|api\.x\.ai|api\.cohere\.ai|api\.perplexity\.ai"), 1, 0)
+| rex field=dest_host "(?<provider>api\.[a-z0-9\-]+\.[a-z]+|openrouter\.ai|generativelanguage\.googleapis\.com|dashscope\.aliyuncs\.com)"
+| eval is_cred = if(EventCode=10 AND like(lower(TargetImage), "%\\lsass.exe"), 1, 0)
+| eval is_inject = if(EventCode=8, 1, 0)
+| eval is_persist = if(EventCode IN (19,20,21), 1, 0)
+| bin _time span=30m
+| stats dc(eval(if(is_llm=1, provider, null()))) AS distinct_providers,
+        values(eval(if(is_llm=1, provider, null()))) AS providers,
+        sum(is_cred) AS lsass_access,
+        sum(is_inject) AS remote_threads,
+        sum(is_persist) AS wmi_persistence
+        BY _time, Computer, Image, ProcessId
+| where distinct_providers >= 2 AND (lsass_access > 0 OR remote_threads > 0 OR wmi_persistence > 0)
+| eval capability=mvjoin(mvfilter(mvappend(
+      if(lsass_access>0,"credential-access",null()),
+      if(remote_threads>0,"injection",null()),
+      if(wmi_persistence>0,"persistence",null())) != ""), ", ")
+| table _time, Computer, Image, ProcessId, distinct_providers, providers, capability
+| sort - _time
+
+
+* ============================================================================================
+* SEARCH 3 - Discord webhook exfiltration from a process that is not Discord.
+*
+* FORENSIC NOTE. AES-256-GCM under a key derived from the current date. If you hold historical
+* capture, the exfiltrated data is very likely recoverable. Preserve the PCAP before remediating.
+* ============================================================================================
+
+index=proxy OR index=sysmon
+| eval url=coalesce(url, QueryName, DestinationHostname)
+| search url="*discord*" AND url="*/api/webhooks/*"
+| eval proc=lower(mvindex(split(Image,"\\"), -1))
+| search NOT proc="discord.exe"
+| stats count AS posts, min(_time) AS first_seen, max(_time) AS last_seen, values(url) AS urls
+        BY Computer, Image
+| convert ctime(first_seen) ctime(last_seen)
+| sort - posts
+
+
+* ============================================================================================
+* SEARCH 4 - Known CLOSEDQUORUM builds.
+*
+* Six development builds across seven days. Talos states there is NO confirmed in-the-wild
+* deployment, so a hit is rare and an absence proves nothing. Do not report a clean hash sweep
+* as coverage of this technique; the behavioural searches above are the coverage.
+* ============================================================================================
+
+index=sysmon (EventCode=1 OR EventCode=15)
+| search SHA256 IN (
+    "250D4FA37488AF9B025333FA17705573D721467B203765BC360890B4F5A90CD7",
+    "C4DC171F2513FCAF9D5ECC815A94AEE4063B213AB380F80BD3AC422DEE5205A7",
+    "C13CEA04F598E2B0C248D603A6E31BD13AABB64D8149C1B6A77B64E0B983A86F",
+    "F5F1F8C3E7B883793800AB6CCF21B3E60BD0730F300B4595FE74A33ADC17A63C",
+    "5191CF625DFC209A347F137B50AEA199E82040FD5EE9086FB3E2DE73C133F3CB",
+    "EDDBD0ECF7195D38FEFAE5B9D393ABFA79E6F3F94BDE19308ECEF130A05A42E5")
+| table _time, Computer, Image, SHA256, ParentImage
