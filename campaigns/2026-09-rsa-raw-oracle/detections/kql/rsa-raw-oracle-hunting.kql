@@ -1,0 +1,99 @@
+// Raw RSA oracle forgery (ePrint 2026/2131) - Microsoft Sentinel.
+//
+// Companion to detections/sigma/rsa-raw-oracle.yml and detections/splunk/rsa-raw-oracle.spl.
+//
+// SCHEMA. There is no built-in Sentinel table for HSM cryptographic operations, so these queries
+// assume custom tables ingested through the Logs Ingestion API, using the neutral field names from
+// the pack README. Placeholder table names:
+//   HsmCryptoOps_CL      one row per private-key operation: TimeGenerated, key_label, operation,
+//                        mechanism, client_id, raw_input_bits (optional)
+//   SignatureSeen_CL     one row per signature observed verifying: key_label, sig_sha256, seen_at
+//   SigningLedger_CL     one row per signature your signer produced: key_label, sig_sha256
+//   TokenEvents_CL       event_type ("issue" or "redeem"), key_label, token_id
+//   KeyBudgets           a watchlist: key_label, key_bits, budget_ops, owner
+// Azure Key Vault and Managed HSM do log operations in AzureDiagnostics (OperationName such as
+// KeySign, KeyDecrypt), but whether the algorithm field distinguishes raw from padded RSA depends
+// on the service and API version. Check your own rows before mapping them here; do not assume.
+//
+// Ref: https://eprint.iacr.org/2026/2131
+// Author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team, 2026-09-26
+// Apache-2.0. Defensive use only.
+
+
+// ============================================================================================
+// QUERY 1 - Signing-ledger reconciliation. ALERT.
+// Anything that verifies under your key and is not in your ledger was not produced by your
+// signer. The only detection that works after the attacker has gone, and the only one blinding
+// cannot touch.
+// ============================================================================================
+SignatureSeen_CL
+| where TimeGenerated > ago(30d)
+| summarize first_seen = min(TimeGenerated), last_seen = max(TimeGenerated),
+            times_seen = count(), seen_at = make_set(seen_at, 20)
+            by key_label, sig_sha256
+| join kind=leftanti (SigningLedger_CL | project key_label, sig_sha256) on key_label, sig_sha256
+| order by first_seen asc
+
+
+// ============================================================================================
+// QUERY 2 - Cumulative private-key operation budget per key. ALERT once budgets exist.
+// Running total, not rate: the attack needs ~2^32 raw queries at 1024 bits and ~2^43 at 2048,
+// and a patient attacker spreads them. Keys with no budget are reported, because unknown is a
+// finding rather than a pass. Set the lookback to the key's lifetime (or read from a daily
+// summary table for high-volume keys).
+// ============================================================================================
+let raw_mechs = dynamic(["CKM_RSA_X_509", "RSA-X-509", "RSA_NO_PADDING"]);
+HsmCryptoOps_CL
+| where operation in ("sign", "decrypt")
+| summarize ops_total = count(),
+            raw_ops = countif(mechanism in (raw_mechs)),
+            distinct_clients = dcount(client_id),
+            first_op = min(TimeGenerated), last_op = max(TimeGenerated)
+            by key_label
+| join kind=leftouter (_GetWatchlist('KeyBudgets')
+        | project key_label = tostring(key_label), key_bits = toint(key_bits),
+                  budget_ops = tolong(budget_ops), owner = tostring(owner)) on key_label
+| extend status = case(isnull(budget_ops), "NO BUDGET - unknown is a finding",
+                       ops_total >= budget_ops, "OVER BUDGET",
+                       ops_total >= 0.8 * budget_ops, "80% OF BUDGET - rotate",
+                       "ok")
+| where status != "ok"
+| extend attack_scale = case(key_bits <= 1024 and raw_ops >= pow(2, 30), "raw ops within 4x of the 1024-bit attack (2^32)",
+                             key_bits <= 2048 and raw_ops >= pow(2, 40), "raw ops within 8x of the 2048-bit estimate (2^43)",
+                             "")
+| project key_label, key_bits, owner, ops_total, raw_ops, distinct_clients, budget_ops, status, attack_scale, first_op, last_op
+
+
+// ============================================================================================
+// QUERY 3 - Blind RSA issuers: redemptions must never exceed issuances. ALERT.
+// For RFC 9474 deployments there is no query-content detection. A forger cannot hide that they
+// redeem tokens nobody issued.
+// ============================================================================================
+TokenEvents_CL
+| summarize issued = countif(event_type == "issue"),
+            redeemed_distinct = dcountif(token_id, event_type == "redeem"),
+            first_event = min(TimeGenerated), last_event = max(TimeGenerated)
+            by key_label
+| extend surplus = redeemed_distinct - issued
+| where surplus > 0 or issued >= 1000000000
+| extend finding = iff(surplus > 0, "REDEMPTIONS EXCEED ISSUANCE - forgery or a broken issuance log",
+                                    "high cumulative issuance - check rotation schedule")
+
+
+// ============================================================================================
+// QUERY 4 - Input-shape tripwire. HUNT ONLY.
+// As published, the queries are small integers far below the modulus. Blinding with the public
+// key defeats this at negligible cost, so a quiet result proves nothing. The padding gate in the
+// pack README is the control.
+// ============================================================================================
+let raw_mechs = dynamic(["CKM_RSA_X_509", "RSA-X-509", "RSA_NO_PADDING"]);
+HsmCryptoOps_CL
+| where mechanism in (raw_mechs) and isnotnull(raw_input_bits)
+| join kind=inner (_GetWatchlist('KeyBudgets') | project key_label = tostring(key_label), key_bits = toint(key_bits)) on key_label
+| extend short_by = key_bits - toint(raw_input_bits)
+| where short_by >= 64
+| summarize short_inputs = count(), smallest_bits = min(toint(raw_input_bits)),
+            clients = make_set(client_id, 20)
+            by bin(TimeGenerated, 1h), key_label, key_bits
+| where short_inputs >= 10
+| order by short_inputs desc

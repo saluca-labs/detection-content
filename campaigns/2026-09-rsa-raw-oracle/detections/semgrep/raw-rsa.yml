@@ -1,0 +1,178 @@
+# Semgrep - raw (unpadded) RSA private-key operations in source code.
+#
+# Inventory, not vulnerability detection. Every match is a place where a private key can be
+# asked to compute x^d mod N on a caller-supplied x, which is the oracle ePrint 2026/2131 needs.
+# Some are legitimate: software-applied ISO 9796-2, X9.31 or RSA-FDH padding, and RFC 9474 blind
+# signing. The question for each match is not "is this a bug" but "who can reach it, how many
+# times, and is the key's operation count recorded".
+#
+# Public-key raw operations (raw verify, raw encrypt) are NOT oracles and these rules try not to
+# match them; where a rule cannot tell, the message says so.
+#
+# Tested in the real engine against hunt/tests/fixtures/semgrep/ by hunt/tests/semgrep_test.py,
+# with positive and negative cases per language.
+#
+# Ref: https://eprint.iacr.org/2026/2131
+# Author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team, 2026-09-26
+# Apache-2.0. Defensive use only.
+
+rules:
+  - id: raw-rsa-java-nopadding-cipher
+    languages: [java, kotlin]
+    severity: WARNING
+    message: >-
+      RSA cipher with no padding. If this Cipher is initialised with a PRIVATE key in DECRYPT (or
+      ENCRYPT-as-sign) mode and fed caller-supplied input, it is a raw RSA oracle in the sense of
+      ePrint 2026/2131. Confirm the key type and who controls the input.
+    patterns:
+      - pattern: javax.crypto.Cipher.getInstance("$T", ...)
+      - metavariable-regex:
+          metavariable: $T
+          regex: (?i)^RSA/[A-Z0-9]+/NoPadding$
+    metadata:
+      category: security
+      subcategory: [audit]
+      references: [https://eprint.iacr.org/2026/2131]
+
+  - id: raw-rsa-android-keystore-padding-none
+    languages: [java, kotlin]
+    severity: WARNING
+    message: >-
+      Android Keystore key authorised for unpadded RSA. A hardware-backed key with
+      ENCRYPTION_PADDING_NONE can be driven as a raw RSA decryption oracle through KeyMint.
+    pattern: $B.setEncryptionPaddings(..., KeyProperties.ENCRYPTION_PADDING_NONE, ...)
+    metadata:
+      category: security
+      subcategory: [audit]
+      references: [https://eprint.iacr.org/2026/2131]
+
+  - id: raw-rsa-openssl-no-padding-private
+    languages: [c, cpp]
+    severity: WARNING
+    message: >-
+      OpenSSL private-key RSA operation with RSA_NO_PADDING. This computes x^d mod N on the input
+      as given: a raw RSA oracle if the input is caller-controlled.
+    pattern-either:
+      - pattern: RSA_private_decrypt($LEN, $IN, $OUT, $KEY, RSA_NO_PADDING)
+      - pattern: RSA_private_encrypt($LEN, $IN, $OUT, $KEY, RSA_NO_PADDING)
+    metadata:
+      category: security
+      subcategory: [audit]
+      references: [https://eprint.iacr.org/2026/2131]
+
+  - id: raw-rsa-openssl-evp-no-padding
+    languages: [c, cpp]
+    severity: INFO
+    message: >-
+      EVP context set to RSA_NO_PADDING. Raw RSA if the context was initialised for sign or
+      decrypt with a private key; harmless if it is a public-key verify or encrypt context. This
+      rule cannot tell which, so check the EVP_PKEY_*_init call for this context.
+    pattern: EVP_PKEY_CTX_set_rsa_padding($CTX, RSA_NO_PADDING)
+    metadata:
+      category: security
+      subcategory: [audit]
+      references: [https://eprint.iacr.org/2026/2131]
+
+  - id: raw-rsa-pkcs11-ckm-rsa-x-509
+    languages: [c, cpp]
+    severity: WARNING
+    message: >-
+      PKCS#11 raw RSA mechanism (CKM_RSA_X_509). With C_Sign or C_Decrypt on a private key this is
+      exactly the HSM oracle used in ePrint 2026/2131. Check CKA_ALLOWED_MECHANISMS on the key and
+      whether private-key operations are counted per key.
+    pattern: CKM_RSA_X_509
+    metadata:
+      category: security
+      subcategory: [audit]
+      references: [https://eprint.iacr.org/2026/2131]
+
+  - id: raw-rsa-python-pkcs11-mechanism
+    languages: [python]
+    severity: WARNING
+    message: >-
+      Python PKCS#11 binding requesting the raw RSA mechanism. Check CKA_ALLOWED_MECHANISMS on the
+      key and whether private-key operations are counted per key.
+    pattern-either:
+      - pattern: PyKCS11.Mechanism(PyKCS11.CKM_RSA_X_509, ...)
+      - pattern: $K.sign(..., mechanism=pkcs11.Mechanism.RSA_X_509, ...)
+      - pattern: $K.decrypt(..., mechanism=pkcs11.Mechanism.RSA_X_509, ...)
+    metadata:
+      category: security
+      subcategory: [audit]
+      references: [https://eprint.iacr.org/2026/2131]
+
+  - id: raw-rsa-python-pow-private-exponent
+    languages: [python]
+    severity: WARNING
+    message: >-
+      Hand-rolled RSA with the private exponent (pow(x, d, n)). This is textbook RSA: a raw oracle
+      if x is caller-supplied, and it also forgoes the blinding and constant-time behaviour of a
+      real library.
+    pattern-either:
+      - pattern: pow($X, $KEY.d, $KEY.n)
+      - pattern: pow($X, $KEY.private_numbers().d, $N)
+      - pattern: gmpy2.powmod($X, $KEY.d, $KEY.n)
+    metadata:
+      category: security
+      subcategory: [audit]
+      references: [https://eprint.iacr.org/2026/2131]
+
+  - id: raw-rsa-pycryptodome-private-primitive
+    languages: [python]
+    severity: WARNING
+    message: >-
+      PyCryptodome raw private-key primitive (_decrypt / _decrypt_to_bytes). These bypass every
+      padding scheme and compute x^d mod N directly.
+    pattern-either:
+      - pattern: $KEY._decrypt($X)
+      - pattern: $KEY._decrypt_to_bytes($X)
+    metadata:
+      category: security
+      subcategory: [audit]
+      references: [https://eprint.iacr.org/2026/2131]
+
+  - id: raw-rsa-go-bigint-private-exponent
+    languages: [go]
+    severity: WARNING
+    message: >-
+      math/big exponentiation with an RSA private exponent. Textbook RSA: a raw oracle if the base
+      is caller-supplied.
+    pattern-either:
+      - pattern: $Z.Exp($X, $PRIV.D, $PRIV.N)
+      - pattern: $Z.Exp($X, $PRIV.D, $PRIV.PublicKey.N)
+    metadata:
+      category: security
+      subcategory: [audit]
+      references: [https://eprint.iacr.org/2026/2131]
+
+  - id: raw-rsa-node-no-padding-private
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: >-
+      Node.js private-key RSA operation with RSA_NO_PADDING. A raw RSA oracle if the buffer is
+      caller-controlled.
+    pattern-either:
+      - pattern: |
+          $C.privateDecrypt({..., padding: $CONST.RSA_NO_PADDING, ...}, $BUF)
+      - pattern: |
+          $C.privateEncrypt({..., padding: $CONST.RSA_NO_PADDING, ...}, $BUF)
+    metadata:
+      category: security
+      subcategory: [audit]
+      references: [https://eprint.iacr.org/2026/2131]
+
+  - id: raw-rsa-blind-signature-library
+    languages: [generic]
+    severity: INFO
+    message: >-
+      Blind RSA signature library in use. RFC 9474 blind signing is a raw RSA oracle by design,
+      and the paper states attacker queries are indistinguishable from legitimate ones. The
+      detections that remain are per-key issuance budgets, key rotation, and reconciling
+      redemptions against issuance.
+    pattern-regex: (?i)(blindrsa|blind_rsa_signatures|blind-rsa-signatures|rsabssa)
+    paths:
+      include: ["*.go", "*.rs", "*.py", "*.ts", "*.js", "*.toml", "*.mod", "requirements*.txt", "package.json", "pyproject.toml"]
+    metadata:
+      category: security
+      subcategory: [audit]
+      references: [https://eprint.iacr.org/2026/2131, https://www.rfc-editor.org/rfc/rfc9474]

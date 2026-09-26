@@ -1,0 +1,214 @@
+# Sigma - raw RSA oracle forgery (ePrint 2026/2131).
+#
+# WHAT THE ATTACK NEEDS FROM YOU. A signer that computes x^d mod N on whatever x it is handed,
+# with no padding. The attacker precomputes from your public key on their own hardware, then
+# makes a few billion raw queries to your signer, then forges offline. The forged signature is
+# valid and indistinguishable from a real one, so NOTHING at verification time can catch it.
+# The query phase is the only phase that crosses your estate, and these rules watch it.
+#
+# WHAT THESE RULES DO NOT DO. They cannot see blind RSA abuse by content: RFC 9474 blind signing
+# is a raw oracle by design, and the paper states the attacker's queries are indistinguishable
+# from legitimate blinded ones. For blind RSA, use the issuance-vs-redemption reconciliation in
+# the SPL and KQL files. They also cannot run at all if your HSM does not log individual
+# cryptographic operations, which many do not. Check that before trusting a quiet rule.
+#
+# ATT&CK. Every mapping in this file is our inference (ATT&CK v19 tactics); the paper supplies
+# none, and no technique describes "make a signer act as an oracle" exactly.
+#
+# SCHEMA. Vendor audit formats differ. These rules use a neutral schema under product: hsm with
+# fields key_label, operation, mechanism, client_id, policy_name, new_value. Map your source onto
+# it; see the pack README.
+#
+# Ref: https://eprint.iacr.org/2026/2131
+# Author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team, 2026-09-26
+
+title: Raw RSA Private-Key Operation On A Key Not Approved For It
+id: 66e28cd3-7f71-4381-8f88-099ed619a92c
+status: experimental
+description: |
+  A private-key operation used the raw, unpadded RSA mechanism (PKCS#11 CKM_RSA_X_509) on a key
+  that is not on your list of keys approved for raw use.
+
+  Most keys should never see this mechanism. PKCS#1 v1.5 and PSS signing apply padding inside
+  the module, and an oracle that pads gives this attack almost nothing. Raw use is legitimate
+  only where an application applies a padding the HSM does not implement (ISO 9796-2, ANSI X9.31,
+  RSA-FDH) or runs blind signatures. Those keys belong on the allowlist below, by label, with the
+  reason recorded. Every other raw operation is either a misconfiguration or an oracle being
+  used, and either one is worth waking up for.
+
+  This rule is also the base event for the budget correlation that follows.
+references:
+    - https://eprint.iacr.org/2026/2131
+    - https://www.rfc-editor.org/rfc/rfc9474
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-09-26
+tags:
+    - attack.credential-access
+    - attack.t1552
+    - attack.stealth
+    - attack.t1553.002
+logsource:
+    product: hsm
+    category: crypto_operation
+detection:
+    raw_rsa:
+        operation:
+            - 'sign'
+            - 'decrypt'
+        mechanism:
+            - 'CKM_RSA_X_509'
+            - 'RSA-X-509'
+            - 'RSA_NO_PADDING'
+    approved_raw_keys:
+        # Replace with the labels of keys that legitimately need raw RSA, one line each, with the
+        # reason in a comment. An empty list here means every raw operation fires, which is the
+        # correct default.
+        key_label:
+            - 'REPLACE-ME-approved-raw-key-label'
+    condition: raw_rsa and not approved_raw_keys
+falsepositives:
+    - A key that legitimately needs raw RSA (software-applied ISO 9796-2, X9.31 or FDH padding, or
+      blind signing) and has not been added to the allowlist yet. Add it by label and record why.
+    - HSM health checks or vendor diagnostics that exercise the raw mechanism on a test key.
+      Allowlist the test key by label, not the client.
+level: high
+---
+# The query phase, counted. This is the rule that sees the attack itself.
+
+title: Raw RSA Operation Budget Exceeded For One Key
+id: 02ba1f53-6646-49d0-88b0-68ab0827348b
+status: experimental
+description: |
+  One key performed more raw RSA private-key operations in a day than its budget allows.
+
+  The attack needs about 2^32 raw queries against a 1024-bit key and the authors extrapolate
+  2^43 for 2048-bit. The researchers' HSM served them at roughly 6,500 per second, so the 1024-bit
+  query phase is about a week of sustained signing. That volume is enormous for most keys and
+  ordinary for a few, which is why the threshold must be set per key from a forecast.
+
+  The value below (1,000,000 per day) is a placeholder that suits a low-volume signing key. It is
+  NOT a sensible value for a token issuer. For high-volume keys, use the cumulative search in the
+  SPL or KQL file instead of a daily count: a patient attacker spreads the draw across weeks and
+  clients, and only a running total per key catches that.
+references:
+    - https://eprint.iacr.org/2026/2131
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-09-26
+tags:
+    - attack.credential-access
+    - attack.t1552
+correlation:
+    type: event_count
+    rules:
+        - 66e28cd3-7f71-4381-8f88-099ed619a92c
+    group-by:
+        - key_label
+    timespan: 1d
+    condition:
+        gte: 1000000
+falsepositives:
+    - Batch jobs on a key newly allowlisted for raw use, before its budget has been forecast. Set
+      the budget from the first week of observed volume and record it.
+level: critical
+---
+# The change that makes the attack possible. In the paper, FIPS-approved mode had to be switched
+# off before the HSM would perform CKM_RSA_X_509 at all.
+
+title: HSM Policy Change Permitting Non-Approved Or Raw RSA Operation
+id: 5393fd09-ec45-45ac-96aa-053102e21905
+status: experimental
+description: |
+  An HSM or partition policy was changed in a way that permits non-FIPS-approved operation, or
+  adds the raw RSA mechanism to what a key or partition may perform.
+
+  The researchers had to disable FIPS-approved mode on their Luna HSM to enable raw RSA. That
+  change is rare, deliberate and administrative, and it should never happen silently. This rule
+  cannot know your vendor's policy vocabulary, so it matches on intent. Expect to edit the
+  keyword lists for your platform.
+references:
+    - https://eprint.iacr.org/2026/2131
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-09-26
+tags:
+    - attack.defense-impairment
+    - attack.t1556
+logsource:
+    product: hsm
+    category: audit
+detection:
+    policy_change:
+        operation: 'policy_change'
+    weakens_fips:
+        policy_name|contains:
+            - 'FIPS'
+            - 'fips'
+            - 'approved'
+        new_value|contains:
+            - 'disable'
+            - 'off'
+            - 'false'
+            - 'non-approved'
+    permits_raw:
+        new_value|contains:
+            - 'CKM_RSA_X_509'
+            - 'RSA-X-509'
+            - 'RSA_NO_PADDING'
+            - 'raw'
+    condition: policy_change and (weakens_fips or permits_raw)
+falsepositives:
+    - Planned HSM maintenance or a documented migration that requires non-approved mode for a
+      window. Tie the event to a change ticket and alert anyway; the cost of reading it is small.
+    - Policy vocabularies that encode the setting as 0 or 1 rather than words. This rule does not
+      match bare digits, because '0' appears in almost every value; add your vendor's exact
+      encoding instead.
+    - Policy vocabulary where 'off' or 'false' means the opposite of what this rule assumes. Check
+      your vendor's policy table and tighten the new_value list before enabling.
+level: high
+---
+# Tooling that asks for unpadded RSA. A hunt: these commands have legitimate uses, and none of
+# them is an attack on its own. What they find is where raw RSA is in use in your estate at all.
+
+title: Unpadded RSA Requested From Command-Line Tooling
+id: ae8e878e-2542-462b-b246-2c67f8f644f7
+status: experimental
+description: |
+  A process invoked OpenSSL or OpenSC pkcs11-tool asking for raw, unpadded RSA:
+  `openssl rsautl -raw`, `openssl pkeyutl ... rsa_padding_mode:none`, or
+  `pkcs11-tool --mechanism RSA-X-509`.
+
+  This is an inventory hunt, not an alert. Legitimate scripts do this for interoperability with
+  legacy padding schemes. The point is to find every place in your estate that holds a raw RSA
+  path to a private key, because each one is a candidate oracle. Repeated invocation against the
+  same key from one host in a loop is worth an alert of its own; the SPL file counts it.
+references:
+    - https://eprint.iacr.org/2026/2131
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-09-26
+tags:
+    - attack.credential-access
+    - attack.t1552.004
+logsource:
+    category: process_creation
+detection:
+    openssl_rsautl_raw:
+        CommandLine|contains|all:
+            - 'rsautl'
+            - '-raw'
+    openssl_pkeyutl_nopad:
+        CommandLine|contains|all:
+            - 'pkeyutl'
+            - 'rsa_padding_mode:none'
+    pkcs11_tool_raw:
+        CommandLine|contains|all:
+            - 'pkcs11-tool'
+            - 'RSA-X-509'
+    condition: openssl_rsautl_raw or openssl_pkeyutl_nopad or pkcs11_tool_raw
+falsepositives:
+    - Scripts implementing ISO 9796-2, X9.31 or other legacy paddings in software on top of raw
+      RSA. Record them; they are exactly the raw paths this hunt exists to inventory.
+    - Cryptography test suites and CTF or teaching material, which use raw RSA to demonstrate
+      textbook RSA. Exclude by host or repository path, not by user.
+    - Operations performed with a PUBLIC key (raw verification or encryption), which are not an
+      oracle. The command line does not always say which key type is in use; check before
+      escalating.
+level: low

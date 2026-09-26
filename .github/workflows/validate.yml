@@ -23,3 +23,18 @@ jobs:
       - run: pip install scapy
       - run: docker pull jasonish/suricata:7.0.17
       - run: python tools/suricata_test.py
+  hunt-tools:
+    # rsa_oracle_audit.py unit tests, the Semgrep rules in the real engine against annotated
+    # fixtures (exact match, so a rule that goes too broad fails too), and the PKCS#11 audit
+    # against a real SoftHSM2 token. Added 2026-09-26 with 2026-09-rsa-raw-oracle: the SoftHSM2
+    # run found a crash the unit tests could not.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m unittest hunt/tests/test_rsa_oracle_audit.py -v
+      - run: docker pull semgrep/semgrep:1.177.0
+      - run: python hunt/tests/semgrep_test.py
+      - run: python hunt/tests/pkcs11_softhsm_test.py

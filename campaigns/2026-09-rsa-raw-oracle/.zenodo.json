@@ -1,0 +1,80 @@
+{
+  "title": "Oracle Drawdown: A Detection Engineering Analysis of RSA Signature Forgery from a Raw Signing Oracle, and Why the Key Never Has to Leave",
+  "upload_type": "publication",
+  "publication_type": "report",
+  "description": "<p>A detection engineering analysis of <em>Forging 1024-bit RSA signatures in nearly SNFS time</em> by Laura Shea, Miro Haller, Adam Suhl, Nadia Heninger (UC San Diego) and Emmanuel Thom&eacute; (Inria Nancy), IACR ePrint 2026/2131, 20 September 2026. The researchers implemented a 2007 algorithm by Joux, Naccache and Thom&eacute; and, against a 1024-bit key held in a Thales Luna HSM, made 4,067,419,331 raw signing queries and then forged signatures offline <strong>without ever recovering the key</strong>: about 1,380 core-years in total, against published estimates of 500,000 to 1,000,000 core-years to factor the same modulus.</p><p><strong>The precondition governs the paper.</strong> The attack needs a <em>raw</em> RSA oracle, one that computes x^d mod N on attacker-chosen input with no padding. PKCS#1 v1.5 and PSS signers are not meaningfully exposed, by the authors' own assessment. Exposed deployments include RFC 9474 blind RSA (the publicly verifiable Privacy Pass token type among them), HSMs with the raw mechanism CKM_RSA_X_509 enabled, and unpadded decryption APIs. This is research, not an incident: there is no victim and no report of use.</p><p><strong>The defender question.</strong> Two of the attack's three phases, precomputation and forgery, run entirely on the attacker's hardware, and the output is a valid signature that no verifier can distinguish from a real one. The only phase that crosses the defender's estate is the query phase, and against blind RSA the authors state the queries are indistinguishable from legitimate ones.</p><p><strong>Section 3 is the synthesis: oracle drawdown.</strong> A raw signer leaks the capability without leaking the secret, so controls aimed at the key cannot see it happen. Unusually, the attacker's minimum consumption is published in advance (about 2^32 raw queries at 1024 bits, an extrapolated 2^43 at 2048), which turns detection into accounting: cumulative per-key operation budgets set against the published price, rotation before the budget is spent, and signing-ledger reconciliation as the only detection that works after the attacker has gone. Section 3.1 states where this is weaker, including that many HSMs do not count individual operations and that at 2048 bits the precomputation, not the budget, is today's binding constraint. An extension to signing tools delegated to autonomous agents is labelled as a prediction, not an observation.</p><p>Detections are ranked by whether they survive an attacker who blinds queries, spreads them over time and uses many clients. Sections state what the attack makes undetectable, what surfaced it (academic research, the sixth consecutive paper in this series in which the finder was not a defensive stack), five falsification conditions, and what the authors are explicitly not claiming, including that RSA is broken, that anyone has been attacked, or that any named deployment is at fault.</p><p>Companion detection content, covering Sigma (including a correlation), SPL, KQL, eleven Semgrep rules tested in the real engine with positive and negative fixtures, and a read-only audit tool whose PKCS#11 mode was tested against a real SoftHSM2 token, is published at <a href=\"https://github.com/saluca-labs/detection-content\">saluca-labs/detection-content</a> under Apache-2.0.</p>",
+  "creators": [
+    {
+      "name": "Ruvalcaba, Cristian",
+      "affiliation": "Saluca LLC"
+    },
+    {
+      "name": "Saluca Agentic AI Research Team",
+      "affiliation": "Saluca LLC"
+    }
+  ],
+  "keywords": [
+    "detection engineering",
+    "rsa",
+    "signature forgery",
+    "number field sieve",
+    "hardware security module",
+    "pkcs11",
+    "blind signatures",
+    "rfc 9474",
+    "privacy pass",
+    "key management",
+    "cryptographic inventory",
+    "sigma rules",
+    "semgrep",
+    "blue team"
+  ],
+  "license": "cc-by-4.0",
+  "access_right": "open",
+  "version": "1.0",
+  "publication_date": "2026-09-26",
+  "communities": [
+    {
+      "identifier": "saluca"
+    }
+  ],
+  "related_identifiers": [
+    {
+      "identifier": "10.5281/zenodo.22903268",
+      "relation": "isPartOf",
+      "resource_type": "publication-report",
+      "scheme": "doi"
+    },
+    {
+      "identifier": "10.5281/zenodo.21770780",
+      "relation": "references",
+      "resource_type": "publication-workingpaper",
+      "scheme": "doi"
+    },
+    {
+      "identifier": "10.5281/zenodo.22678061",
+      "relation": "references",
+      "resource_type": "publication-report",
+      "scheme": "doi"
+    },
+    {
+      "identifier": "https://eprint.iacr.org/2026/2131",
+      "relation": "references",
+      "resource_type": "publication-preprint",
+      "scheme": "url"
+    },
+    {
+      "identifier": "https://www.rfc-editor.org/rfc/rfc9474",
+      "relation": "references",
+      "resource_type": "publication-other",
+      "scheme": "url"
+    },
+    {
+      "identifier": "https://github.com/saluca-labs/detection-content",
+      "relation": "isSupplementedBy",
+      "resource_type": "software",
+      "scheme": "url"
+    }
+  ],
+  "notes": "Sixth in the consolidated series of detection engineering analyses from Saluca Labs published alongside the saluca-labs/detection-content repository, and the first built on cryptanalytic research rather than an intrusion. Each analysis is deposited separately with its own DOI; the detection content consolidates in one repository, the citations do not. The report text is CC BY 4.0. THE DETECTION CONTENT IN THE ATTACHED SOURCE ARCHIVE IS APACHE-2.0, which the single licence field above cannot express. Built from IACR ePrint 2026/2131 (read in full); no access to the authors' code, HSMs or any vendor; nothing reproduced. No detection has been run against telemetry from a real signer; the audit tool's PKCS#11 mode was tested against SoftHSM2 only. There is no victim and no reported use of the technique. ATT&CK mappings are the authors' inference. Defensive use only. Current to 26 September 2026."
+}
