@@ -146,8 +146,9 @@ handler. Unit tests alone would never have found this.
 
 Paper: *Oracle Drawdown: A Detection Engineering Analysis of RSA Signature Forgery from a Raw
 Signing Oracle, and Why the Key Never Has to Leave*, `oracle-drawdown-v1.0.md` in this directory.
-DOI reserved as 10.5281/zenodo.22981798 (version DOI, deposit NOT yet published). The concept DOI
-will be read off the published record and recorded here; cite that one once it exists.
+Published 26 September 2026. **Cite the concept DOI [10.5281/zenodo.22981797](https://doi.org/10.5281/zenodo.22981797)**,
+read off the published record, which resolves to the newest version. 10.5281/zenodo.22981798 is
+the version DOI for v1.0.
 
 ## Scope and intent
 
