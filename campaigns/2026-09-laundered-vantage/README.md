@@ -209,7 +209,11 @@ Exact, as of 2026-09-26:
 
 ## Citation
 
-Paper: *Laundered Vantage* (in preparation); DOI to be reserved.
+Paper: *Laundered Vantage: A Detection Engineering Analysis of Lab Agents Probing Government and
+Public-Data Sites, and Why the Victim Sees a Security Scanner*, `laundered-vantage-v1.0.md` in this
+directory. DOI reserved: version 10.5281/zenodo.22986083, concept 10.5281/zenodo.22986082 (read off
+the draft record's `conceptrecid`, 2026-09-27). **Deposit NOT yet published**; confirm the concept DOI
+on the published record before citing it.
 
 ## Scope and intent
 
