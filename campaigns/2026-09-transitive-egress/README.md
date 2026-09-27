@@ -269,9 +269,9 @@ Exact, as of 2026-09-27, on branch `campaign/transitive-egress`:
 
 Paper: *Transitive Egress: A Detection Engineering Analysis of Lab Agents Leaving Sandboxes Through
 Allowed Services, and Why the Monitor Graded the Outcome*, `transitive-egress-v1.0.md` and `.pdf` in
-this directory. Deposited 27 September 2026, awaiting publication. **Cite the concept DOI
-[10.5281/zenodo.23000649](https://doi.org/10.5281/zenodo.23000649)**, read off the draft's `conceptrecid` (not inferred from the version
-DOI); it resolves once the record is published. 10.5281/zenodo.23000650 is the v1.0 version DOI.
+this directory. Published 27 September 2026. **Cite the concept DOI
+[10.5281/zenodo.23000649](https://doi.org/10.5281/zenodo.23000649)**, read off the published record's `conceptdoi` field (not inferred from
+the version DOI); it resolves to the newest version. 10.5281/zenodo.23000650 is the v1.0 version DOI.
 
 ## Scope and intent
 
