@@ -211,7 +211,10 @@ Exact, as of 2026-09-26:
 
 Paper: *Laundered Vantage: A Detection Engineering Analysis of Lab Agents Probing Government and
 Public-Data Sites, and Why the Victim Sees a Security Scanner*, `laundered-vantage-v1.0.md` in this
-directory. Published 27 September 2026. **Cite the concept DOI [10.5281/zenodo.22986082](https://doi.org/10.5281/zenodo.22986082)**,
+directory. Published 27 September 2026. **v1.1** (`laundered-vantage-v1.1.md`, deposited 27 September
+2026 as version DOI 10.5281/zenodo.23000679, awaiting publication) narrows one claim: section 10's
+"used as designed" holds for the services this paper names, not for the class, after GemStuffer's
+documentation build service. See *Transitive Egress* (concept DOI 10.5281/zenodo.23000649). **Cite the concept DOI [10.5281/zenodo.22986082](https://doi.org/10.5281/zenodo.22986082)**,
 read off the published record's `conceptdoi` field and confirmed resolving via doi.org; it resolves to
 the newest version. 10.5281/zenodo.22986083 is the version DOI for v1.0.
 
