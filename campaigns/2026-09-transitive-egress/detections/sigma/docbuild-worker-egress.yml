@@ -1,0 +1,150 @@
+# Sigma - a documentation build worker reaches hosts a documentation build never needs, or
+# publishes to a package registry.
+#
+# DOC-BUILD OPERATOR VANTAGE. You run a service that builds documentation, previews, SBOMs or
+# any other artefact from packages other people publish: RubyDoc.info, a docs site for an
+# internal registry, a CI job that renders every dependency's README.
+#
+# What the sources say happened, at the level they say it. rubyhack.ai (Kitts, Larsen, Von Arx,
+# 11 Sep 2026): "Whenever you publish a package ... to RubyGems, and submit a request, the site
+# RubyDoc.info builds and hosts documentation for it." Building documentation involves
+# "evaluating a user-specified .yardopts file, which allows linking to Ruby scripts"; the
+# campaign used that to run code on the build workers, fetch UK council web pages, and "publish
+# another gem back to the RubyGems package registry". JFrog (15 Sep 2026): "The identified
+# malicious packages used RubyDoc's documentation workers ... to fetch websites and send the
+# results back through RubyGems." JFrog's advice: "A documentation job that only reads packages
+# should not be able to publish them."
+#
+# THE SITES SAW THE BUILD SERVICE. Lambeth, Wandsworth and Southwark's servers saw requests from
+# a documentation host. That is the transitive-egress property seen from its far end, and it is
+# why these rules sit with the doc-build operator: nobody else can see the hop.
+#
+# ATTRIBUTION caveats as in registry-publish-from-nonrelease.yml, verbatim: OpenAI "not been able
+# to verify the specific claims"; Ruby Central "cannot determine whether the packages were created
+# or published by AI agents". These rules are about build workers, not about who built the gem.
+#
+# RubyDoc.info and RubyGems are services that were used. Nothing here is a finding about either.
+#
+# LOG SOURCE. Egress proxy for the build fleet. Worker range and allowlist are PLACEHOLDERS: the
+# allowlist is what a docs build legitimately fetches (your registry, its CDN, your source host).
+#
+# ATT&CK mapping (inferred, ATT&CK v19): Proxy (T1090) for the build worker used as a vantage;
+# Exfiltration Over Web Service (T1567) for the publish back.
+#
+# Ref: https://rubyhack.ai/
+# Ref: https://research.jfrog.com/post/gemstuffer-openai-rubygems/
+# Author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team, 2026-09-27
+
+title: Documentation Build Worker Contacts A Host Outside Its Fetch Allowlist
+id: 96d220d4-34bb-4b09-970d-53b077b5d4fe
+status: experimental
+description: |
+  A documentation build worker made an outbound request to a host that is not the package
+  registry, its CDN or the source host. Package-controlled build configuration can run code in
+  the build; that code's first outbound request to anywhere else is the observable.
+
+  ALERT when the fleet runs under an egress allowlist; otherwise this is the inventory hunt that
+  produces one.
+
+  ATT&CK mapping (inferred): T1090.
+references:
+    - https://rubyhack.ai/
+    - https://research.jfrog.com/post/gemstuffer-openai-rubygems/
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-09-27
+tags:
+    - attack.command-and-control
+    - attack.t1090
+logsource:
+    category: proxy
+detection:
+    build_workers:
+        c-ip|cidr: '203.0.113.0/26'   # PLACEHOLDER: your documentation build workers
+    # PLACEHOLDER allowlist: what a docs build legitimately fetches.
+    fetch_allowlist:
+        cs-host:
+            - 'rubygems.org'
+            - 'index.rubygems.org'
+            - 'github.com'
+            - 'codeload.github.com'
+    condition: build_workers and not fetch_allowlist
+falsepositives:
+    - Documentation that links remote images or badges, if the builder fetches them. Most
+      builders do not; if yours does, fetch them through a caching proxy with its own allowlist.
+    - Builders that resolve cross-references against other projects' published docs. Add those
+      hosts deliberately, one by one.
+level: high
+---
+title: Documentation Build Worker Publishes To A Package Registry
+id: c5f3150b-345c-45b5-bd07-bbb31deadd9a
+status: experimental
+description: |
+  A documentation build worker sent a publish or webhook registration to a package registry.
+  A job that reads packages has no reason to write one; this is the return leg of the GemStuffer
+  loop as rubyhack.ai and JFrog describe it.
+
+  ALERT, critical. It also means registry credentials were reachable from the build, directly
+  or through the package itself: JFrog observed embedded keys in payloads.
+
+  ATT&CK mapping (inferred): T1567.
+references:
+    - https://rubyhack.ai/
+    - https://research.jfrog.com/post/gemstuffer-openai-rubygems/
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-09-27
+tags:
+    - attack.exfiltration
+    - attack.t1567
+logsource:
+    category: proxy
+detection:
+    build_workers:
+        c-ip|cidr: '203.0.113.0/26'   # PLACEHOLDER
+    rubygems_write:
+        cs-host: 'rubygems.org'
+        cs-method: 'POST'
+        c-uri-stem|re: '^/+api/+v1/+(gems|web_hooks)'
+    other_registry_write:
+        - cs-host: 'upload.pypi.org'
+          cs-method: 'POST'
+        - cs-host: 'registry.npmjs.org'
+          cs-method: 'PUT'
+        - cs-host: 'crates.io'
+          cs-method: 'PUT'
+    condition: build_workers and (rubygems_write or other_registry_write)
+falsepositives:
+    - None expected from a documentation build. If a combined build-and-release job runs on the
+      same workers, split it; the split is the control.
+level: critical
+---
+title: Documentation Build Worker Fetches Outside Its Allowlist Then Publishes
+id: e04ebf1b-d277-49f9-b6a2-57ef22696ee7
+status: experimental
+description: |
+  The same build worker contacted a host outside its fetch allowlist and then, within 30
+  minutes, published to a package registry. Fetch then publish is the whole loop the sources
+  describe, seen from the one vantage that sees both legs.
+
+  ATT&CK mapping (inferred): T1090, T1567.
+references:
+    - https://rubyhack.ai/
+    - https://research.jfrog.com/post/gemstuffer-openai-rubygems/
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-09-27
+tags:
+    - attack.command-and-control
+    - attack.t1090
+    - attack.exfiltration
+    - attack.t1567
+correlation:
+    type: temporal_ordered
+    rules:
+        - 96d220d4-34bb-4b09-970d-53b077b5d4fe
+        - c5f3150b-345c-45b5-bd07-bbb31deadd9a
+    group-by:
+        - c-ip
+    timespan: 30m
+falsepositives:
+    - Shared NAT in front of the whole build fleet joins unrelated jobs. Log the worker or job
+      identity and group on that instead.
+level: critical

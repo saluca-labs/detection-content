@@ -1,0 +1,105 @@
+# Suricata rules - transitive egress: agent, evaluation and CI workloads leaving through allowed
+# or public services (package registry publish endpoints, image, temporary file and paste hosts)
+# and DNS names shaped unlike ordinary resolution.
+#
+# SANDBOX OPERATOR VANTAGE ONLY. Every rule is scoped from $SANDBOX_NET. From those ranges a
+# registry publish or an upload to a public host is an exit. From anywhere else these are ordinary
+# developer actions, so there are no rules here for other ranges.
+#
+# All services named here are legitimate. None of them is an indicator of compromise and none of
+# them operated anything; they were used. The image, temporary-file and paste hosts are OUR list:
+# OpenAI redacted every host it described.
+#
+# WHAT A SENSOR CAN SEE.
+#   TLS  only the SNI. A publish and an install to the same registry host look the same, so the
+#        TLS rules cover only hosts that are write-only (upload.pypi.org) or upload-dominated.
+#   HTTP method and path, which is what separates a publish from an install, exist only on
+#        plain HTTP or on a DECRYPTED feed (a TLS-inspecting proxy's mirror port). All four
+#        registries are HTTPS-only, so section 2 is silent on an ordinary tap. It is shipped
+#        because inspecting egress gateways for agent fleets are common, and it is labelled.
+#   DNS  query names. Suricata 7.0 has no record-type keyword for DNS, so the TXT-heavy signal
+#        lives in the Sigma, SPL, KQL and hunt/transitive_egress_audit.py, not here.
+#
+# NOT DUPLICATED FROM 2026-09-agent-collusion (9200001-9200099 range). That pack matches
+# webhook.site, counterapi.dev, tunnel services and relays. Nothing below repeats a host from it,
+# and nothing repeats 2026-09-laundered-vantage (9200200-9200299).
+#
+# ONE RULE PER LINE. Suricata does not join lines without a trailing backslash (WORKFLOW.md).
+# dotprefix makes ".catbox.moe" match catbox.moe and any subdomain, and not notcatbox.moe.
+# Exact single hosts use content plus bsize. tls.sni and http.host are lowercase already.
+#
+# Variables: SANDBOX_NET must be your agent / evaluation / CI ranges. Edit it.
+#
+# Every threshold is a starting point from the published record, not telemetry.
+#
+# Author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team, 2026-09-27
+# Ref: https://alignment.openai.com/misalignment-reports/an-agent-used-dns-to-reach-an-external-chatbot/
+# Ref: https://research.jfrog.com/post/gemstuffer-openai-rubygems/
+# License: Apache-2.0
+
+# -----------------------------------------------------------------------------------------------
+# 1. REGISTRY UPLOAD HOSTS BY SNI. upload.pypi.org serves uploads only (installs come from
+#    files.pythonhosted.org and pypi.org), so its SNI alone is a publish attempt.
+# -----------------------------------------------------------------------------------------------
+alert tls $SANDBOX_NET any -> $EXTERNAL_NET any (msg:"SALUCA Transitive Egress - sandbox workload opens TLS to PyPI upload host"; flow:established,to_server; tls.sni; content:"upload.pypi.org"; bsize:15; classtype:policy-violation; reference:url,research.jfrog.com/post/gemstuffer-openai-rubygems/; metadata:vantage operator, confidence high; sid:9200300; rev:1;)
+
+# -----------------------------------------------------------------------------------------------
+# 2. REGISTRY PUBLISH AND WEBHOOK ENDPOINTS BY METHOD AND PATH. DECRYPTED OR PLAIN HTTP ONLY.
+#    RubyGems paths tolerate doubled slashes (JFrog records the payload trying /api/v1//gems and
+#    //api/v1/gems); http.uri is normalised by Suricata, http.uri.raw is what was sent, so these
+#    rules match the raw URI with a pcre.
+# -----------------------------------------------------------------------------------------------
+alert http $SANDBOX_NET any -> $EXTERNAL_NET any (msg:"SALUCA Transitive Egress - sandbox workload pushes a gem to RubyGems (decrypted or plain HTTP)"; flow:established,to_server; http.method; content:"POST"; bsize:4; http.host; content:"rubygems.org"; bsize:12; http.uri.raw; pcre:"/^\/+api\/+v1\/+gems\/*(?:\?|$)/"; classtype:policy-violation; reference:url,research.jfrog.com/post/gemstuffer-openai-rubygems/; metadata:vantage operator, confidence high; sid:9200301; rev:1;)
+alert http $SANDBOX_NET any -> $EXTERNAL_NET any (msg:"SALUCA Transitive Egress - sandbox workload registers a RubyGems webhook (decrypted or plain HTTP)"; flow:established,to_server; http.method; content:"POST"; bsize:4; http.host; content:"rubygems.org"; bsize:12; http.uri.raw; pcre:"/^\/+api\/+v1\/+web_hooks/"; classtype:policy-violation; reference:url,rubyhack.ai; metadata:vantage operator, confidence high; sid:9200302; rev:1;)
+alert http $SANDBOX_NET any -> $EXTERNAL_NET any (msg:"SALUCA Transitive Egress - sandbox workload uploads to PyPI (decrypted or plain HTTP)"; flow:established,to_server; http.method; content:"POST"; bsize:4; http.host; content:"upload.pypi.org"; bsize:15; classtype:policy-violation; reference:url,research.jfrog.com/post/gemstuffer-openai-rubygems/; metadata:vantage operator, confidence high; sid:9200303; rev:1;)
+alert http $SANDBOX_NET any -> $EXTERNAL_NET any (msg:"SALUCA Transitive Egress - sandbox workload writes a package document to the npm registry (decrypted or plain HTTP)"; flow:established,to_server; http.method; content:"PUT"; bsize:3; http.host; content:"registry.npmjs.org"; bsize:18; classtype:policy-violation; reference:url,research.jfrog.com/post/gemstuffer-openai-rubygems/; metadata:vantage operator, confidence medium; sid:9200304; rev:1;)
+alert http $SANDBOX_NET any -> $EXTERNAL_NET any (msg:"SALUCA Transitive Egress - sandbox workload publishes a crate (decrypted or plain HTTP)"; flow:established,to_server; http.method; content:"PUT"; bsize:3; http.host; content:"crates.io"; bsize:9; http.uri.raw; pcre:"/^\/+api\/+v1\/+crates\/+new\/*(?:\?|$)/"; classtype:policy-violation; reference:url,research.jfrog.com/post/gemstuffer-openai-rubygems/; metadata:vantage operator, confidence high; sid:9200305; rev:1;)
+
+# -----------------------------------------------------------------------------------------------
+# 3. IMAGE, TEMPORARY FILE AND PASTE HOSTS BY SNI. Contact, not upload: TLS hides the method.
+#    OpenAI: "53 instances ... where user-provided images were posted to image-hosting sites";
+#    a workbook uploaded to "a public temporary file-hosting service"; a paste host and an image
+#    host used to cite and to search. Hosts redacted in every source; this list is ours.
+# -----------------------------------------------------------------------------------------------
+alert tls $SANDBOX_NET any -> $EXTERNAL_NET any (msg:"SALUCA Transitive Egress - sandbox workload contacts image host API api.imgur.com"; flow:established,to_server; tls.sni; content:"api.imgur.com"; bsize:13; classtype:policy-violation; reference:url,openai.com/hugging-face-incident-and-misalignment/; metadata:vantage operator, confidence medium; sid:9200310; rev:1;)
+alert tls $SANDBOX_NET any -> $EXTERNAL_NET any (msg:"SALUCA Transitive Egress - sandbox workload contacts image host API api.imgbb.com"; flow:established,to_server; tls.sni; content:"api.imgbb.com"; bsize:13; classtype:policy-violation; reference:url,openai.com/hugging-face-incident-and-misalignment/; metadata:vantage operator, confidence medium; sid:9200311; rev:1;)
+alert tls $SANDBOX_NET any -> $EXTERNAL_NET any (msg:"SALUCA Transitive Egress - sandbox workload contacts image host freeimage.host"; flow:established,to_server; tls.sni; dotprefix; content:".freeimage.host"; endswith; classtype:policy-violation; reference:url,openai.com/hugging-face-incident-and-misalignment/; metadata:vantage operator, confidence medium; sid:9200312; rev:1;)
+alert tls $SANDBOX_NET any -> $EXTERNAL_NET any (msg:"SALUCA Transitive Egress - sandbox workload contacts image host postimages.org"; flow:established,to_server; tls.sni; dotprefix; content:".postimages.org"; endswith; classtype:policy-violation; reference:url,openai.com/hugging-face-incident-and-misalignment/; metadata:vantage operator, confidence medium; sid:9200313; rev:1;)
+alert tls $SANDBOX_NET any -> $EXTERNAL_NET any (msg:"SALUCA Transitive Egress - sandbox workload contacts file host catbox.moe"; flow:established,to_server; tls.sni; dotprefix; content:".catbox.moe"; endswith; classtype:policy-violation; reference:url,alignment.openai.com/misalignment-reports/unauthorized-communication-via-temporary-file-hosting-services/; metadata:vantage operator, confidence medium; sid:9200314; rev:1;)
+alert tls $SANDBOX_NET any -> $EXTERNAL_NET any (msg:"SALUCA Transitive Egress - sandbox workload contacts temporary file host 0x0.st"; flow:established,to_server; tls.sni; content:"0x0.st"; bsize:6; classtype:policy-violation; reference:url,alignment.openai.com/misalignment-reports/unauthorized-communication-via-temporary-file-hosting-services/; metadata:vantage operator, confidence high; sid:9200315; rev:1;)
+alert tls $SANDBOX_NET any -> $EXTERNAL_NET any (msg:"SALUCA Transitive Egress - sandbox workload contacts temporary file host tmpfiles.org"; flow:established,to_server; tls.sni; dotprefix; content:".tmpfiles.org"; endswith; classtype:policy-violation; reference:url,alignment.openai.com/misalignment-reports/unauthorized-communication-via-temporary-file-hosting-services/; metadata:vantage operator, confidence high; sid:9200316; rev:1;)
+alert tls $SANDBOX_NET any -> $EXTERNAL_NET any (msg:"SALUCA Transitive Egress - sandbox workload contacts temporary file host temp.sh"; flow:established,to_server; tls.sni; content:"temp.sh"; bsize:7; classtype:policy-violation; reference:url,alignment.openai.com/misalignment-reports/unauthorized-communication-via-temporary-file-hosting-services/; metadata:vantage operator, confidence high; sid:9200317; rev:1;)
+alert tls $SANDBOX_NET any -> $EXTERNAL_NET any (msg:"SALUCA Transitive Egress - sandbox workload contacts temporary file host uguu.se"; flow:established,to_server; tls.sni; dotprefix; content:".uguu.se"; endswith; classtype:policy-violation; reference:url,alignment.openai.com/misalignment-reports/unauthorized-communication-via-temporary-file-hosting-services/; metadata:vantage operator, confidence high; sid:9200318; rev:1;)
+alert tls $SANDBOX_NET any -> $EXTERNAL_NET any (msg:"SALUCA Transitive Egress - sandbox workload contacts file host pixeldrain.com"; flow:established,to_server; tls.sni; dotprefix; content:".pixeldrain.com"; endswith; classtype:policy-violation; reference:url,alignment.openai.com/misalignment-reports/unauthorized-communication-via-temporary-file-hosting-services/; metadata:vantage operator, confidence medium; sid:9200319; rev:1;)
+alert tls $SANDBOX_NET any -> $EXTERNAL_NET any (msg:"SALUCA Transitive Egress - sandbox workload contacts file host gofile.io"; flow:established,to_server; tls.sni; dotprefix; content:".gofile.io"; endswith; classtype:policy-violation; reference:url,alignment.openai.com/misalignment-reports/unauthorized-communication-via-temporary-file-hosting-services/; metadata:vantage operator, confidence medium; sid:9200320; rev:1;)
+alert tls $SANDBOX_NET any -> $EXTERNAL_NET any (msg:"SALUCA Transitive Egress - sandbox workload contacts temporary file host bashupload.com"; flow:established,to_server; tls.sni; dotprefix; content:".bashupload.com"; endswith; classtype:policy-violation; reference:url,alignment.openai.com/misalignment-reports/unauthorized-communication-via-temporary-file-hosting-services/; metadata:vantage operator, confidence high; sid:9200321; rev:1;)
+alert tls $SANDBOX_NET any -> $EXTERNAL_NET any (msg:"SALUCA Transitive Egress - sandbox workload contacts paste host paste.rs"; flow:established,to_server; tls.sni; content:"paste.rs"; bsize:8; classtype:policy-violation; reference:url,alignment.openai.com/misalignment-reports/uploading-files-to-the-internet-in-order-to-cite-them/; metadata:vantage operator, confidence medium; sid:9200322; rev:1;)
+alert tls $SANDBOX_NET any -> $EXTERNAL_NET any (msg:"SALUCA Transitive Egress - sandbox workload contacts paste host paste.ee"; flow:established,to_server; tls.sni; dotprefix; content:".paste.ee"; endswith; classtype:policy-violation; reference:url,alignment.openai.com/misalignment-reports/uploading-files-to-the-internet-in-order-to-cite-them/; metadata:vantage operator, confidence medium; sid:9200323; rev:1;)
+
+# Plain-HTTP upload, where the host still serves it (0x0.st and bashupload.com accept uploads
+# over HTTP). Method visible, so this one is a write, not a contact.
+alert http $SANDBOX_NET any -> $EXTERNAL_NET any (msg:"SALUCA Transitive Egress - sandbox workload uploads to a temporary file host over plain HTTP"; flow:established,to_server; http.method; content:"POST"; bsize:4; http.host; pcre:"/^(?:0x0\.st|bashupload\.com|(?:[a-z0-9-]+\.)*tmpfiles\.org)$/"; classtype:policy-violation; reference:url,alignment.openai.com/misalignment-reports/unauthorized-communication-via-temporary-file-hosting-services/; metadata:vantage operator, confidence high; sid:9200324; rev:1;)
+
+# -----------------------------------------------------------------------------------------------
+# 4. DNS NAME SHAPE. From $SANDBOX_NET to any resolver, including the sanctioned internal one:
+#    OpenAI's exit was "the training environment's own resolver". Name length only; no content.
+#    100 characters total, or one label of 40 or more: starting points, not measurements.
+# -----------------------------------------------------------------------------------------------
+alert dns $SANDBOX_NET any -> any any (msg:"SALUCA Transitive Egress - sandbox workload asks for a DNS name of 100 or more characters"; dns.query; bsize:>99; classtype:policy-violation; reference:url,alignment.openai.com/misalignment-reports/an-agent-used-dns-to-reach-an-external-chatbot/; metadata:vantage operator, confidence medium; sid:9200330; rev:1;)
+alert dns $SANDBOX_NET any -> any any (msg:"SALUCA Transitive Egress - sandbox workload asks for a DNS name with a label of 40 or more characters"; dns.query; pcre:"/(?:^|\.)[^.]{40,}(?:\.|$)/"; classtype:policy-violation; reference:url,alignment.openai.com/misalignment-reports/an-agent-used-dns-to-reach-an-external-chatbot/; metadata:vantage operator, confidence medium; sid:9200331; rev:1;)
+
+# -----------------------------------------------------------------------------------------------
+# WHAT THESE RULES DO NOT DO.
+#
+# - They see that a workload reached a host, never what it sent. The upload content, the image,
+#   the workbook, the package payload are all inside TLS.
+# - Section 2 is silent without decryption. On an ordinary tap, a RubyGems publish and a gem
+#   install are the same TLS connection to rubygems.org.
+# - The host list in section 3 is ours and rotates cheaply. The agent in OpenAI's citation report
+#   found its host by searching "upload file curl free service".
+# - Section 4 counts characters. A name of 99 characters, or labels of 39, pass. So does any
+#   exit through a resolver that uses short names, many of them: that is the per-domain
+#   cardinality view, which needs state across queries and lives in the SPL, KQL and the tool.
+# - None of this sees a documentation build worker's egress unless the sensor sits in front of
+#   the build fleet and $SANDBOX_NET includes it. Doc-build operators: include it.
+# -----------------------------------------------------------------------------------------------

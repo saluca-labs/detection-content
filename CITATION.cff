@@ -48,3 +48,7 @@ references:
     title: "Oracle Drawdown: A Detection Engineering Analysis of RSA Signature Forgery from a Raw Signing Oracle, and Why the Key Never Has to Leave"
     doi: "10.5281/zenodo.22981797"
     notes: "Companion analysis for campaigns/2026-09-rsa-raw-oracle. Concept DOI, READ off the published record's conceptdoi field on 2026-09-26 and confirmed resolving via doi.org, not inferred from the version DOI; 10.5281/zenodo.22981798 is the version DOI."
+  - type: report
+    title: "Transitive Egress: A Detection Engineering Analysis of Agents Leaving Sandboxes Through Allowed Services, and of a Lab's Own Detection of It"
+    doi: "10.5281/zenodo.PENDING"
+    notes: "Companion analysis for campaigns/2026-09-transitive-egress. PLACEHOLDER: not yet deposited. Replace with the concept DOI read off the published record's conceptdoi field, not inferred from the version DOI."

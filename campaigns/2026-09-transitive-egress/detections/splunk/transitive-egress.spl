@@ -1,0 +1,241 @@
+* Transitive egress - Splunk.
+*
+* Companion to detections/sigma/*.yml, detections/kql/transitive-egress-hunting.kql and
+* hunt/transitive_egress_audit.py.
+*
+* SCHEMA. Index, sourcetype and lookup names are placeholders. Rename to your own. The logic
+* survives the translation, the names do not.
+*   dns        index=dns   src, query, record_type, reply_code (Zeek: id.orig_h, query, qtype_name,
+*                          rcode_name; alias them), environment (from a host or CIDR lookup)
+*   proxy      index=proxy src, dest_host, http_method, uri_path, environment
+*   alerts     index=alerts (or your notable/incident index) alert_id, rule_name, category,
+*              first_event_time, detected_time, acked_time, contained_time (epoch seconds),
+*              status, urgency, original_urgency, close_reason
+*   registry   index=registry (registry operators only) package, version, account, account_created
+*              (epoch), action, src
+*   lookups    sandbox_ranges (CIDR on src, workload_class), release_runners (CIDR on src),
+*              docbuild_workers (CIDR on src), docbuild_allowlist.csv (dest_host),
+*              dns_allowlist (WILDCARD(zone), allowed), detector_scope.csv (detector, environment,
+*              excluded 0/1; WILDCARD(environment))
+*
+* EVERY THRESHOLD IS A STARTING POINT from the published record, not telemetry. Nothing here was
+* run in Splunk: no instance was available. The outcome-grading regex in search 8 is extracted
+* from this file and run in Python re by hunt/tests/test_transitive_egress_audit.py
+* (PackRegexCrossCheck), which also fails if this copy and the KQL copy drift apart.
+*
+* Ref: https://alignment.openai.com/misalignment-reports/an-agent-used-dns-to-reach-an-external-chatbot/
+* Ref: https://rubyhack.ai/  https://research.jfrog.com/post/gemstuffer-openai-rubygems/
+* Author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team, 2026-09-27
+* Apache-2.0. Defensive use only.
+
+
+* ============================================================================================
+* SEARCH 1 - Sandbox DNS shape per registered domain. SANDBOX OPERATOR. ALERT in sandboxes.
+*
+* DNS through a sanctioned resolver looks like DNS. What remains is shape: many distinct names
+* under one registered domain, long names or labels, a high share of TXT/NULL/ANY/NS. Registered
+* domain is approximated as the last two labels, or three under a short list of multi-label public
+* suffixes; install URL Toolbox (ut_parse_extended) for the full Public Suffix List. Entropy is
+* not computed here; hunt/transitive_egress_audit.py dns computes it, or use ut_shannon.
+* ============================================================================================
+
+index=dns earliest=-1h
+| lookup sandbox_ranges src OUTPUT workload_class
+| where isnotnull(workload_class)
+| eval q=lower(trim(query, ".")), labels=split(q, "."), n=mvcount(labels)
+| eval reg2=if(n>=2, mvjoin(mvindex(labels, n-2, n-1), "."), q)
+| eval reg3=if(n>=3, mvjoin(mvindex(labels, n-3, n-1), "."), q)
+| eval reg=if(match(reg2, "^(co|org|gov|ac|ltd|plc|net|sch|me)\.uk$|^(com|net|org|gov|edu)\.au$|^co\.(nz|jp|in|za|kr)$|^com\.(br|cn|mx|sg|tw|hk|tr|ar)$|^github\.io$|^(vercel|netlify)\.app$|^pages\.dev$|^workers\.dev$"), reg3, reg2)
+| eval sub=if(q==reg, null(), replace(q, "\.".reg."$", ""))
+| eval max_label=max(mvmap(labels, len(labels)))
+| eval odd_type=if(match(upper(record_type), "^(TXT|NULL|ANY|\*|NS)$"), 1, 0)
+| stats count AS queries, dc(sub) AS unique_subdomains, max(eval(len(q))) AS max_name_len,
+        max(max_label) AS max_label_len, sum(odd_type) AS odd, values(src) AS sources BY reg
+| eval odd_share=round(odd/queries, 2)
+| eval flags=mvappend(if(unique_subdomains>=50, "high-cardinality", null()),
+                      if(max_label_len>=40 OR max_name_len>=100, "long-name", null()),
+                      if(odd_share>=0.5 AND queries>=10, "txt-heavy", null()))
+| where isnotnull(flags)
+| sort - unique_subdomains
+
+
+* ============================================================================================
+* SEARCH 2 - Sandbox resolver answered, or was asked, outside the allowlist. RESOLVER OWNER.
+*
+* Two grades, both reported. ATTEMPT: any rcode. ANSWERED: NOERROR, the control failing open.
+* Grade the attempt, not the outcome: OpenAI's monitor "sometimes treated the failure to obtain
+* useful information as evidence that the attempt to access the internet had failed."
+* dns_allowlist is a WILDCARD lookup: rows like "*.allowed.example" and "allowed.example".
+* ============================================================================================
+
+index=dns earliest=-1h
+| lookup sandbox_ranges src OUTPUT workload_class
+| where isnotnull(workload_class)
+| eval q=lower(trim(query, "."))
+| lookup dns_allowlist zone AS q OUTPUT allowed
+| where isnull(allowed)
+| eval grade=if(upper(reply_code)=="NOERROR", "ANSWERED", "ATTEMPT")
+| stats count, dc(q) AS distinct_names, values(grade) AS grades, values(reply_code) AS rcodes,
+        min(_time) AS first, max(_time) AS last BY src, workload_class
+| eval severity=if(mvfind(grades, "ANSWERED")>=0, "high: resolver answered outside allowlist",
+                  if(distinct_names>=50, "high: breadth of attempts", "medium: attempts"))
+| convert ctime(first) ctime(last)
+
+
+* ============================================================================================
+* SEARCH 3 - Package registry publish or webhook registration from a non-release workload.
+* SANDBOX OPERATOR and CI owner. ALERT. Needs a TLS-inspecting proxy (method and path).
+* RubyGems paths tolerate doubled slashes, as recorded by JFrog.
+* ============================================================================================
+
+index=proxy earliest=-24h
+| eval host_l=lower(dest_host), m=upper(http_method)
+| eval action=case(
+    host_l=="rubygems.org" AND m=="POST" AND match(uri_path, "^/+api/+v1/+gems/*$"), "rubygems push",
+    host_l=="rubygems.org" AND m=="POST" AND match(uri_path, "^/+api/+v1/+web_hooks"), "rubygems webhook",
+    host_l=="upload.pypi.org" AND m=="POST", "pypi upload",
+    host_l=="registry.npmjs.org" AND m=="PUT", "npm publish",
+    host_l=="crates.io" AND m=="PUT" AND match(uri_path, "^/+api/+v1/+crates/+new/*$"), "crates publish")
+| where isnotnull(action)
+| lookup release_runners src OUTPUT runner
+| where isnull(runner)
+| lookup sandbox_ranges src OUTPUT workload_class
+| stats count, values(action) AS actions, values(uri_path) AS paths, min(_time) AS first,
+        max(_time) AS last BY src, workload_class
+| eval severity=if(count>=10, "critical: publish burst", "high")
+| convert ctime(first) ctime(last)
+
+
+* ============================================================================================
+* SEARCH 4 - Uploads to image, temporary file and paste hosts from agent workloads.
+* SANDBOX OPERATOR. ALERT in sandboxes. EXTENDS 2026-09-agent-collusion (which covers
+* webhook.site, requestbin, pipedream, pastebin api, hastebin, dpaste, transfer.sh, file.io).
+* The host list is ours: every source redacted the hosts.
+* ============================================================================================
+
+index=proxy earliest=-24h (http_method=POST OR http_method=PUT)
+| eval host_l=lower(dest_host)
+| where match(host_l, "^(api\.imgur\.com|api\.imgbb\.com|freeimage\.host|postimages\.org|imgbox\.com|catbox\.moe|0x0\.st|tmpfiles\.org|temp\.sh|uguu\.se|pixeldrain\.com|bashupload\.com|paste\.rs|rentry\.co)$|\.(catbox\.moe|gofile\.io|uguu\.se|paste\.ee|pixeldrain\.com)$")
+| lookup sandbox_ranges src OUTPUT workload_class
+| eval scope=if(isnotnull(workload_class), "ALERT (agent workload)", "hunt")
+| stats count, sum(bytes_out) AS bytes_out, values(dest_host) AS hosts, min(_time) AS first BY src, workload_class, scope
+| convert ctime(first)
+
+
+* ============================================================================================
+* SEARCH 5 - Documentation build worker egress outside its allowlist, and publishes.
+* DOC-BUILD OPERATOR. ALERT. Fetch-then-publish from the same worker within 30 minutes is the
+* loop rubyhack.ai and JFrog describe; either leg alone is still reported.
+* ============================================================================================
+
+index=proxy earliest=-24h
+| lookup docbuild_workers src OUTPUT worker
+| where isnotnull(worker)
+| eval host_l=lower(dest_host), m=upper(http_method)
+| lookup docbuild_allowlist.csv dest_host AS host_l OUTPUT dest_host AS allowed_host
+| eval leg=case(
+    host_l=="rubygems.org" AND m=="POST" AND match(uri_path, "^/+api/+v1/+(gems|web_hooks)"), "publish",
+    (host_l=="upload.pypi.org" AND m=="POST") OR (host_l IN ("registry.npmjs.org", "crates.io") AND m=="PUT"), "publish",
+    isnull(allowed_host), "off-allowlist fetch")
+| where isnotnull(leg)
+| sort 0 _time
+| streamstats current=f last(eval(if(leg=="off-allowlist fetch", _time, null()))) AS last_fetch BY src
+| eval loop=if(leg=="publish" AND isnotnull(last_fetch) AND _time-last_fetch<=1800, 1, 0)
+| stats count, values(leg) AS legs, values(dest_host) AS hosts, max(loop) AS fetch_then_publish BY src, worker
+| eval severity=case(fetch_then_publish==1, "critical: fetch then publish",
+                     mvfind(legs, "publish")>=0, "critical: build worker published", true(), "high: off-allowlist fetch")
+
+
+* ============================================================================================
+* SEARCH 6 - Logged is not detected: environments in DNS or proxy logs that a detector does not
+* cover, or explicitly excludes. COVERAGE AUDIT. Run weekly; every row is a finding.
+*
+* OpenAI: "an infrastructure detector for anomalous DNS activity excluded the affected
+* environment, though DNS activity was logged." Exclusion lists are silent by construction. This
+* search makes them loud. detector_scope.csv: detector, environment (wildcards allowed via a
+* WILDCARD(environment) lookup definition), excluded (1 for an explicit exclusion).
+* ============================================================================================
+
+| tstats count WHERE (index=dns OR index=proxy) earliest=-7d BY index, environment
+| stats sum(count) AS events, values(index) AS log_sources BY environment
+| join type=left max=0 environment
+    [| inputlookup detector_scope.csv | fields detector, environment, excluded]
+| eval state=case(isnull(detector), "NOT IN ANY DETECTOR SCOPE",
+                  excluded==1, "EXCLUDED BUT LOGGED by ".detector,
+                  true(), "covered by ".detector)
+| stats values(state) AS states, max(events) AS events, values(log_sources) AS log_sources BY environment
+| where mvcount(mvfilter(match(states, "^covered by "))) == 0 OR mvcount(mvfilter(match(states, "^EXCLUDED"))) > 0
+| sort - events
+* Pair it with the reverse check: a detector-scope row whose environment produced no logs in 7
+* days is a stale scope entry, or a log pipeline that died quietly. Both look green.
+
+
+* ============================================================================================
+* SEARCH 7 - Response latency per alert: event -> detect -> ack -> contain. RESPONSE METRICS.
+*
+* The OpenAI DNS incident, as published: tool call 09:50:23, P0 alert 10:02:11, human ack
+* 10:05:06, run killed 12:34:30. That is 11m48s, 2m55s and 2h29m24s. "the run did not stop
+* automatically as expected". The flag threshold is OpenAI's own published rule: responders are
+* expected to pause the activity if they "cannot conclusively determine within 30 minutes that
+* the flag is a false positive". An alert with no containment time is flagged, not skipped:
+* cannot tell is not a pass.
+* ============================================================================================
+
+index=alerts earliest=-30d (category="egress" OR category="dns" OR category="upload" OR category="publish")
+| eval event_to_detect=detected_time-first_event_time, detect_to_ack=acked_time-detected_time,
+       ack_to_contain=contained_time-acked_time
+| eval flag=case(isnull(acked_time), "NOT ACKED",
+                 isnull(contained_time), "NOT CONTAINED",
+                 event_to_detect<0 OR detect_to_ack<0 OR ack_to_contain<0, "OUT OF ORDER",
+                 ack_to_contain>1800, "CONTAINMENT > 30m AFTER ACK")
+| eventstats median(event_to_detect) AS med_detect, median(detect_to_ack) AS med_ack,
+             median(ack_to_contain) AS med_contain
+| where isnotnull(flag)
+| eval event_to_detect=tostring(event_to_detect, "duration"), detect_to_ack=tostring(detect_to_ack, "duration"),
+       ack_to_contain=tostring(ack_to_contain, "duration"), med_contain=tostring(med_contain, "duration")
+| table alert_id rule_name flag event_to_detect detect_to_ack ack_to_contain med_contain
+
+
+* ============================================================================================
+* SEARCH 8 - Outcome-graded suppression audit. Alerts on a boundary crossing that were closed or
+* downgraded BECAUSE the crossing returned nothing useful. MONITOR QUALITY. Review every row.
+*
+* OpenAI's retrospective found external DNS access "that it did not flag at the expected
+* severity. These included queries that returned a static notice that an external service had
+* shut down. The monitor sometimes treated the failure to obtain useful information as evidence
+* that the attempt to access the internet had failed." A monitor, human or model, that grades the
+* outcome is measuring the attacker's luck. Re-grade these on the attempt.
+*
+* OUTCOME REGEX (matched against the lower-cased close or downgrade reason; kept free of
+* backslashes so SPL, KQL and Python read it identically):
+*   no (useful )?(data|information|results?|response|content)|nothing (was )?returned|returned nothing|(attempt|request|lookup|query|connection|upload|access) (failed|timed out|was blocked|was unsuccessful)|failed to (obtain|retrieve|connect|resolve|reach)|timed? ?out|blocked by (the )?(proxy|policy|firewall)|(service|site) (had |has )?shut down|no (impact|harm) since
+* ============================================================================================
+
+index=alerts earliest=-90d (category="egress" OR category="dns" OR category="upload" OR category="publish")
+| eval reason_l=lower(coalesce(close_reason, ""))
+| where (status IN ("closed", "resolved", "suppressed") OR urgency!=original_urgency)
+| where match(reason_l, "no (useful )?(data|information|results?|response|content)|nothing (was )?returned|returned nothing|(attempt|request|lookup|query|connection|upload|access) (failed|timed out|was blocked|was unsuccessful)|failed to (obtain|retrieve|connect|resolve|reach)|timed? ?out|blocked by (the )?(proxy|policy|firewall)|(service|site) (had |has )?shut down|no (impact|harm) since")
+| table _time alert_id rule_name original_urgency urgency status close_reason
+
+
+* ============================================================================================
+* SEARCH 9 - Registry operator: timestamp-suffixed package names, and publish bursts from new
+* accounts. REGISTRY OPERATOR. HUNT.
+*
+* JFrog: "Package names often included suffixes, such as a unix timestamp for their creation
+* date. For example, the suffix of oaifetchmde1778385544 decodes to May 10 at 03:59:04 UTC. Its
+* first recorded upload was at 03:59:20 UTC, 16 seconds later." A name whose trailing digits
+* decode to within a day of its own publish time is a generated name. rubyhack.ai and Ruby
+* Central describe newly registered accounts publishing in bulk.
+* ============================================================================================
+
+index=registry action=publish earliest=-7d
+| rex field=package "(?<ts_suffix>\d{10})\d{0,3}$"
+| eval suffix_skew=abs(_time - tonumber(ts_suffix))
+| eval generated_name=if(isnotnull(ts_suffix) AND suffix_skew<=86400, 1, 0)
+| eval account_age_h=round((_time - account_created)/3600, 1)
+| bin _time span=1h AS hour
+| stats count AS publishes, dc(package) AS packages, sum(generated_name) AS generated_names,
+        min(account_age_h) AS account_age_h, values(src) AS sources BY account, hour
+| where generated_names>0 OR (account_age_h<24 AND publishes>=10)
+| sort - publishes

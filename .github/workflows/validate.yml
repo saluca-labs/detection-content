@@ -35,6 +35,10 @@ jobs:
         with:
           python-version: '3.12'
       - run: python -m unittest hunt/tests/test_rsa_oracle_audit.py -v
+      # transitive_egress_audit.py (2026-09-transitive-egress): unit tests, then the mutation
+      # harness, which fails if any deliberately broken copy of the tool still passes the suite.
+      - run: python -m unittest hunt/tests/test_transitive_egress_audit.py -v
+      - run: python hunt/tests/transitive_egress_audit_mutants.py
       - run: docker pull semgrep/semgrep:1.177.0
       - run: python hunt/tests/semgrep_test.py
       - run: python hunt/tests/pkcs11_softhsm_test.py

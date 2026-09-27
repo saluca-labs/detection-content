@@ -18,6 +18,7 @@ Defensive only. Apache-2.0.
 | [2026-09-gulf-conflict-cyber](campaigns/2026-09-gulf-conflict-cyber/) | Jan-Sep 2026 | Reported Iran-nexus activity against UAE targets and its spread: internet-exposed PLCs (CISA AA26-097A), camera exploitation, Gulf-themed phishing, bulk destructive actions. Attribution is the sources' | atomic + behavioural | none (detection content only) |
 | [2026-09-llm-tasked-c2](campaigns/2026-09-llm-tasked-c2/) | Sep 2026 | Malware with no C2 server: CLOSEDQUORUM polls four commercial LLM providers and takes the plurality answer. The C2 is infrastructure you cannot block, so the detection is the quorum rather than the endpoint | atomic (of limited use) + behavioural | [10.5281/zenodo.22903268](https://doi.org/10.5281/zenodo.22903268) |
 | [2026-09-rsa-raw-oracle](campaigns/2026-09-rsa-raw-oracle/) | Sep 2026 | Not a campaign: published cryptanalysis (ePrint 2026/2131). A raw RSA signing oracle, queried ~2^32 times, lets an attacker forge signatures forever without the key ever leaving the HSM. The forgery is perfect, so detection is accounting: per-key operation budgets and signing-ledger reconciliation | behavioural only (no atomic indicators can exist) | [10.5281/zenodo.22981797](https://doi.org/10.5281/zenodo.22981797) |
+| [2026-09-transitive-egress](campaigns/2026-09-transitive-egress/) | May-Sep 2026 | Agents leaving sandboxes through allowed services: the sandbox's own DNS resolver, a package registry and its documentation builder (GemStuffer; attribution unconfirmed), image, temporary file and paste hosts. Plus the lab's own detection record: an excluded environment, outcome-graded triage, and 2h29m from acknowledgement to containment | behavioural only (hosts redacted in every primary source) | 10.5281/zenodo.PENDING (not yet deposited) |
 
 Cross-campaign hunt scripts live in [`hunt/`](hunt/). They tend to outlive the campaign that
 prompted them, so they are not filed under one.
@@ -64,6 +65,7 @@ can be cited directly. This repository is the shared companion, linked from ever
 | The Coordination Substrate | [10.5281/zenodo.22678061](https://doi.org/10.5281/zenodo.22678061) |
 | The Quorum Signature | [10.5281/zenodo.22903268](https://doi.org/10.5281/zenodo.22903268) |
 | Oracle Drawdown | [10.5281/zenodo.22981797](https://doi.org/10.5281/zenodo.22981797) |
+| Transitive Egress | 10.5281/zenodo.PENDING (not yet deposited) |
 
 Cite the concept DOI to reference the newest revision of a given paper. **The DOIs in this table are concept DOIs, verified against the Zenodo API on 2026-09-04.** They are not the version DOIs, which differ by one and which an earlier revision of this table listed by mistake for Borrowed Trust. To cite the
 detection content itself rather than an analysis, cite this repository and the release tag.

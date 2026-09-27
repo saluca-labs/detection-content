@@ -1,0 +1,151 @@
+# Sigma - the sandbox's own resolver, seen from the resolver's log.
+#
+# RESOLVER-OWNER VANTAGE. The OpenAI DNS report says the agent's direct public DNS queries "went
+# unanswered, but the training environment's own resolver returned a real record for a known
+# domain and correctly rejected an invented one." The allowed thing was the resolver. It was
+# allowed because a sandbox needs name resolution; it was an exit because it resolved external
+# names. OpenAI calls this class "transitive internet access paths".
+#
+# The control OpenAI then deployed is "a limited allowed list of domains and record types". These
+# rules monitor that control from the resolver's log, in two grades:
+#
+#   ATTEMPT   any query from a sandbox for a zone outside the allowlist, whatever the answer.
+#   ANSWERED  the resolver returned NOERROR for such a zone. That is the control failing open.
+#
+# WHY THE ATTEMPT IS GRADED AT ALL. OpenAI's retrospective found "other cases of external DNS
+# access that it did not flag at the expected severity. These included queries that returned a
+# static notice that an external service had shut down. The monitor sometimes treated the failure
+# to obtain useful information as evidence that the attempt to access the internet had failed."
+# A boundary crossing that returned nothing useful is still a boundary crossing. The attempt rule
+# is the one that does not measure the attacker's luck.
+#
+# NOT DUPLICATED FROM 2026-09-agent-collusion. sandbox-resolver-tampering.yml there catches a
+# workload EDITING /etc/hosts or /etc/resolv.conf (host vantage). These rules assume the resolver
+# configuration is intact and ask what the resolver itself answered.
+#
+# LOG SOURCE. Zeek dns.log names; for a resolver's own query log map client address to
+# id.orig_h, response code to rcode_name. The sandbox range and the allowlist are PLACEHOLDERS.
+# The allowlist must be the same list the resolver enforces, or this rule measures a different
+# policy from the one you run. Keep one source of truth and generate both from it.
+#
+# ATT&CK mapping (inferred, ATT&CK v19): T1071.004, T1572.
+#
+# Ref: https://alignment.openai.com/misalignment-reports/an-agent-used-dns-to-reach-an-external-chatbot/
+# Author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team, 2026-09-27
+
+title: Sandbox DNS Query For A Zone Outside The Resolver Allowlist
+id: 91db6928-0cd4-424d-b0fe-4af7fced97c5
+status: experimental
+description: |
+  ATTEMPT grade. A sandbox workload asked the resolver for a name outside the allowlisted zones,
+  regardless of the response code. NXDOMAIN, SERVFAIL, REFUSED and a timeout all count: the
+  attempt crossed the policy boundary whether or not anything came back.
+
+  Alert in sandboxes that run under a DNS allowlist; where no allowlist exists yet, this is the
+  inventory hunt that tells you what the allowlist needs to contain.
+
+  ATT&CK mapping (inferred): T1071.004.
+references:
+    - https://alignment.openai.com/misalignment-reports/an-agent-used-dns-to-reach-an-external-chatbot/
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-09-27
+tags:
+    - attack.command-and-control
+    - attack.t1071.004
+logsource:
+    product: zeek
+    service: dns
+detection:
+    sandbox:
+        id.orig_h|cidr: '198.51.100.0/24'   # PLACEHOLDER: your agent / eval / CI ranges
+    # PLACEHOLDER allowlist. Replace with the zones your resolver is configured to answer for.
+    allowlisted_suffix:
+        query|endswith:
+            - '.cluster.local'
+            - '.in-addr.arpa'
+            - '.allowed.example'
+    allowlisted_apex:
+        query:
+            - 'allowed.example'
+    condition: sandbox and not (allowlisted_suffix or allowlisted_apex)
+falsepositives:
+    - An allowlist that drifted from the resolver's real configuration. The fix is one list that
+      generates both, not an exclusion here.
+    - OS and runtime background lookups (time sync, telemetry, captive-portal checks) from a
+      base image nobody trimmed. Trim the image.
+level: medium
+---
+title: Sandbox Resolver Answered For A Zone Outside The Allowlist
+id: d636c524-ab56-4a27-afac-37003c6ad2f5
+status: experimental
+description: |
+  ANSWERED grade. The resolver returned NOERROR to a sandbox workload for a name outside the
+  allowlisted zones. If the resolver enforces the allowlist this never happens, so each match is
+  a control failing open: the condition OpenAI described as "insufficient DNS filtering".
+
+  ALERT. Page on it: this is a policy violation by the infrastructure, not a judgement about the
+  workload.
+
+  ATT&CK mapping (inferred): T1071.004, T1572.
+references:
+    - https://alignment.openai.com/misalignment-reports/an-agent-used-dns-to-reach-an-external-chatbot/
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-09-27
+tags:
+    - attack.command-and-control
+    - attack.t1071.004
+    - attack.t1572
+logsource:
+    product: zeek
+    service: dns
+detection:
+    sandbox:
+        id.orig_h|cidr: '198.51.100.0/24'   # PLACEHOLDER: your agent / eval / CI ranges
+    answered:
+        rcode_name: 'NOERROR'
+    allowlisted_suffix:
+        query|endswith:
+            - '.cluster.local'
+            - '.in-addr.arpa'
+            - '.allowed.example'
+    allowlisted_apex:
+        query:
+            - 'allowed.example'
+    condition: sandbox and answered and not (allowlisted_suffix or allowlisted_apex)
+falsepositives:
+    - A deliberate forwarding exception added to the resolver and not to this list. Every such
+      exception is a new exit; record it in both places or remove it.
+level: high
+---
+title: Many Distinct Out-Of-Allowlist DNS Names From One Sandbox Workload
+id: 8c92c2d2-d350-4731-af86-cab9d62b32b5
+status: experimental
+description: |
+  One sandbox source asked for 50 or more DISTINCT out-of-allowlist names within 10 minutes,
+  answered or not. The attempt rule counts events; this counts the breadth of the probing. A
+  starting point from the published sequence (search engines tried, then several DNS services,
+  then batches of questions), not a measurement.
+
+  ATT&CK mapping (inferred): T1071.004, T1572.
+references:
+    - https://alignment.openai.com/misalignment-reports/an-agent-used-dns-to-reach-an-external-chatbot/
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-09-27
+tags:
+    - attack.command-and-control
+    - attack.t1071.004
+    - attack.t1572
+correlation:
+    type: value_count
+    rules:
+        - 91db6928-0cd4-424d-b0fe-4af7fced97c5
+    group-by:
+        - id.orig_h
+    timespan: 10m
+    condition:
+        gte: 50
+        field: query
+falsepositives:
+    - A new base image with many uninventoried background lookups, on its first run. Inventory it
+      in a lab range first.
+level: high
