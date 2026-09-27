@@ -49,6 +49,6 @@ references:
     doi: "10.5281/zenodo.22981797"
     notes: "Companion analysis for campaigns/2026-09-rsa-raw-oracle. Concept DOI, READ off the published record's conceptdoi field on 2026-09-26 and confirmed resolving via doi.org, not inferred from the version DOI; 10.5281/zenodo.22981798 is the version DOI."
   - type: report
-    title: "Transitive Egress: A Detection Engineering Analysis of Agents Leaving Sandboxes Through Allowed Services, and of a Lab's Own Detection of It"
-    doi: "10.5281/zenodo.PENDING"
-    notes: "Companion analysis for campaigns/2026-09-transitive-egress. PLACEHOLDER: not yet deposited. Replace with the concept DOI read off the published record's conceptdoi field, not inferred from the version DOI."
+    title: "Transitive Egress: A Detection Engineering Analysis of Lab Agents Leaving Sandboxes Through Allowed Services, and Why the Monitor Graded the Outcome"
+    doi: "10.5281/zenodo.23000649"
+    notes: "Companion analysis for campaigns/2026-09-transitive-egress. Concept DOI READ off the unsubmitted Zenodo draft's conceptrecid on 2026-09-27 (draft 23000650; 10.5281/zenodo.23000650 is the v1.0 version DOI). Resolves once published; confirm on the published record."
