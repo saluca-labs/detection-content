@@ -211,9 +211,9 @@ Exact, as of 2026-09-26:
 
 Paper: *Laundered Vantage: A Detection Engineering Analysis of Lab Agents Probing Government and
 Public-Data Sites, and Why the Victim Sees a Security Scanner*, `laundered-vantage-v1.0.md` in this
-directory. DOI reserved: version 10.5281/zenodo.22986083, concept 10.5281/zenodo.22986082 (read off
-the draft record's `conceptrecid`, 2026-09-27). **Deposit NOT yet published**; confirm the concept DOI
-on the published record before citing it.
+directory. Published 27 September 2026. **Cite the concept DOI [10.5281/zenodo.22986082](https://doi.org/10.5281/zenodo.22986082)**,
+read off the published record's `conceptdoi` field and confirmed resolving via doi.org; it resolves to
+the newest version. 10.5281/zenodo.22986083 is the version DOI for v1.0.
 
 ## Scope and intent
 
