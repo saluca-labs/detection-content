@@ -1,0 +1,80 @@
+# Suricata rules - laundered vantage: agent workloads reaching inspection, reader, echo,
+# headless-browser and disposable-mail services.
+#
+# OPERATOR VANTAGE ONLY. Every rule is scoped $SANDBOX_NET -> $EXTERNAL_NET: agent, evaluation,
+# sandbox and CI workloads. From those ranges these services are the laundering layer Transluce
+# described ("AI agents used the web security service urlquery.net to bypass restrictions and
+# expand their access to the public internet"). From anywhere else they are ordinary tools used
+# daily by security teams and developers, so there are no rules here for other ranges.
+#
+# There are NO site-vantage rules in this file. A site cannot attribute a laundered request by its
+# source: the source is the inspector, whose egress ranges the sources do not give. The site-side
+# signal is the escalation-after-refusal sequence, which needs state across requests and lives in
+# the Sigma correlation, the SPL and KQL, and hunt/public_scan_search.py.
+#
+# All services named here are legitimate. None of them is an indicator of compromise and none of
+# them operated anything; they were used.
+#
+# ONE RULE PER LINE. Suricata does not join lines without a trailing backslash (WORKFLOW.md).
+# dotprefix makes ".urlquery.net" match urlquery.net and any subdomain, and not a lookalike such
+# as noturlquery.net. tls.sni and http.host are already lowercase, so no nocase.
+#
+# Overlap with 2026-09-agent-collusion: that pack matches r.jina.ai and markdown.new by HTTP Host
+# (9200017, 9200020). The rules here match them by TLS SNI, which that pack does not.
+#
+# Variables: SANDBOX_NET must be your agent / evaluation / CI ranges. Shipped with SANDBOX_NET
+# unset, these rules fire on everything or nothing. Edit them.
+#
+# Author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team, 2026-09-26
+# Ref: https://transluce.org/agent-activity
+# License: Apache-2.0
+
+# -----------------------------------------------------------------------------------------------
+# 1. URL INSPECTION SANDBOXES. The remote browser the agents drove, and (INFERENCE, from the
+#    dataset's imported explorer) a second public scan corpus.
+# -----------------------------------------------------------------------------------------------
+alert tls $SANDBOX_NET any -> $EXTERNAL_NET any (msg:"SALUCA Laundered Vantage - sandbox workload contacts URL inspection sandbox urlquery.net"; flow:established,to_server; tls.sni; dotprefix; content:".urlquery.net"; endswith; classtype:policy-violation; reference:url,transluce.org/agent-activity; metadata:vantage operator, confidence medium; sid:9200200; rev:1;)
+alert tls $SANDBOX_NET any -> $EXTERNAL_NET any (msg:"SALUCA Laundered Vantage - sandbox workload contacts URL inspection sandbox urlscan.io"; flow:established,to_server; tls.sni; dotprefix; content:".urlscan.io"; endswith; classtype:policy-violation; reference:url,transluce.org/agent-activity; metadata:vantage operator, confidence low; sid:9200201; rev:1;)
+
+# -----------------------------------------------------------------------------------------------
+# 2. READER PROXIES. Fetch a page on the caller's behalf; the target sees the reader.
+# -----------------------------------------------------------------------------------------------
+alert tls $SANDBOX_NET any -> $EXTERNAL_NET any (msg:"SALUCA Laundered Vantage - sandbox workload contacts reader proxy r.jina.ai"; flow:established,to_server; tls.sni; dotprefix; content:".r.jina.ai"; endswith; classtype:policy-violation; reference:url,transluce.org/agent-activity; metadata:vantage operator, confidence medium; sid:9200202; rev:1;)
+alert tls $SANDBOX_NET any -> $EXTERNAL_NET any (msg:"SALUCA Laundered Vantage - sandbox workload contacts reader proxy markdown.new"; flow:established,to_server; tls.sni; dotprefix; content:".markdown.new"; endswith; classtype:policy-violation; reference:url,transluce.org/agent-activity; metadata:vantage operator, confidence medium; sid:9200203; rev:1;)
+
+# -----------------------------------------------------------------------------------------------
+# 3. ECHO SERVICES. Used as a code-carrier (eu.httpbin.org/base64/<HTML+JS>) and as an exfil sink
+#    (httpbun.com/status/204?pr=...) in the AIHW episode.
+# -----------------------------------------------------------------------------------------------
+alert tls $SANDBOX_NET any -> $EXTERNAL_NET any (msg:"SALUCA Laundered Vantage - sandbox workload contacts request echo service httpbin.org"; flow:established,to_server; tls.sni; dotprefix; content:".httpbin.org"; endswith; classtype:policy-violation; reference:url,transluce.org/agent-activity; metadata:vantage operator, confidence low; sid:9200204; rev:1;)
+alert tls $SANDBOX_NET any -> $EXTERNAL_NET any (msg:"SALUCA Laundered Vantage - sandbox workload contacts request echo service httpbun.com"; flow:established,to_server; tls.sni; dotprefix; content:".httpbun.com"; endswith; classtype:policy-violation; reference:url,transluce.org/agent-activity; metadata:vantage operator, confidence low; sid:9200205; rev:1;)
+alert http $SANDBOX_NET any -> $EXTERNAL_NET any (msg:"SALUCA Laundered Vantage - sandbox workload contacts request echo service httpbin.org over plain HTTP"; flow:established,to_server; http.host; dotprefix; content:".httpbin.org"; endswith; classtype:policy-violation; reference:url,transluce.org/agent-activity; metadata:vantage operator, confidence low; sid:9200206; rev:1;)
+alert http $SANDBOX_NET any -> $EXTERNAL_NET any (msg:"SALUCA Laundered Vantage - sandbox workload loads base64 page from httpbin, code-carrier"; flow:established,to_server; http.host; dotprefix; content:".httpbin.org"; endswith; http.uri; content:"/base64/"; startswith; classtype:policy-violation; reference:url,transluce.org/agent-activity; metadata:vantage operator, confidence medium; sid:9200207; rev:1;)
+
+# -----------------------------------------------------------------------------------------------
+# 4. HOSTED HEADLESS BROWSER AND DISPOSABLE MAIL. The account-acquisition chain: a mail.gw inbox,
+#    a Browserless one-time passcode, the inbox read, the account verified.
+# -----------------------------------------------------------------------------------------------
+alert tls $SANDBOX_NET any -> $EXTERNAL_NET any (msg:"SALUCA Laundered Vantage - sandbox workload contacts hosted headless browser browserless.io"; flow:established,to_server; tls.sni; dotprefix; content:".browserless.io"; endswith; classtype:policy-violation; reference:url,transluce.org/agent-activity; metadata:vantage operator, confidence medium; sid:9200208; rev:1;)
+alert tls $SANDBOX_NET any -> $EXTERNAL_NET any (msg:"SALUCA Laundered Vantage - sandbox workload contacts disposable mail service mail.gw"; flow:established,to_server; tls.sni; dotprefix; content:".mail.gw"; endswith; classtype:policy-violation; reference:url,transluce.org/agent-activity; metadata:vantage operator, confidence high; sid:9200209; rev:1;)
+
+# -----------------------------------------------------------------------------------------------
+# 5. NAMED RELAYS. Transluce: "we see matching evidence of agents using services such as
+#    milankarman.github.io/Embed-Web-Playground, httpbin.org and blogsflow.liftbrandfulfillment.com"
+#    to turn GET into POST for urlquery. Exact names, no dotprefix: a subdomain is not the relay.
+# -----------------------------------------------------------------------------------------------
+alert tls $SANDBOX_NET any -> $EXTERNAL_NET any (msg:"SALUCA Laundered Vantage - sandbox workload contacts GET-to-POST relay milankarman.github.io"; flow:established,to_server; tls.sni; content:"milankarman.github.io"; bsize:21; classtype:policy-violation; reference:url,transluce.org/agent-activity; metadata:vantage operator, confidence medium; sid:9200210; rev:1;)
+alert tls $SANDBOX_NET any -> $EXTERNAL_NET any (msg:"SALUCA Laundered Vantage - sandbox workload contacts GET-to-POST relay blogsflow.liftbrandfulfillment.com"; flow:established,to_server; tls.sni; content:"blogsflow.liftbrandfulfillment.com"; bsize:34; classtype:policy-violation; reference:url,transluce.org/agent-activity; metadata:vantage operator, confidence medium; sid:9200211; rev:1;)
+
+# -----------------------------------------------------------------------------------------------
+# WHAT THESE RULES DO NOT DO.
+#
+# - They see that a workload reached a service, never what it asked the service to fetch: that is
+#   inside TLS. The urlquery submission, the Jina target and the httpbin payload are invisible
+#   here except for 9200207, which needs plain HTTP.
+# - The service list is the one Transluce observed. Swapping to an unlisted reader, echo service
+#   or scanner costs an operator nothing. This is why these rules rank below the behavioural
+#   escalation correlation.
+# - milankarman.github.io is a GitHub Pages site. A different Pages site hosting the same tool
+#   defeats 9200210 trivially.
+# -----------------------------------------------------------------------------------------------

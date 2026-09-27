@@ -1,0 +1,302 @@
+{
+ "results": [
+  {
+   "submitter": {},
+   "canonical": {
+    "task": {
+     "url": "datausa.io"
+    },
+    "page": {
+     "url": "datausa.io"
+    }
+   },
+   "task": {
+    "visibility": "public",
+    "method": "api",
+    "domain": "datausa.io",
+    "apexDomain": "datausa.io",
+    "time": "2026-09-04T06:42:10.846Z",
+    "uuid": "01a06b27-24a3-778f-aa37-fdbf00d60993",
+    "url": "http://datausa.io/",
+    "tags": [
+     "tranco_l76g4"
+    ]
+   },
+   "stats": {
+    "uniqIPs": 3,
+    "uniqCountries": 2,
+    "dataLength": 9212309,
+    "encodedDataLength": 3773411,
+    "requests": 50
+   },
+   "page": {
+    "server": "cloudflare",
+    "redirected": "https-only",
+    "ip": "172.67.96.83",
+    "apexDomainAgeDays": 3832,
+    "language": "en",
+    "mimeType": "text/html",
+    "title": "Data USA",
+    "url": "https://datausa.io/",
+    "tlsValidDays": 90,
+    "tlsAgeDays": 49,
+    "domainAgeDays": 3832,
+    "tlsValidFrom": "2026-07-16T08:17:49.000Z",
+    "domain": "datausa.io",
+    "umbrellaRank": 536845,
+    "apexDomain": "datausa.io",
+    "asnname": "CLOUDFLARENET - Cloudflare, Inc., US",
+    "asn": "AS13335",
+    "tlsIssuer": "WE1",
+    "status": "200"
+   },
+   "labels": [],
+   "_id": "01a06b27-24a3-778f-aa37-fdbf00d60993",
+   "_score": null,
+   "sort": [
+    1788504130846,
+    "01a06b27-24a3-778f-aa37-fdbf00d60993"
+   ],
+   "result": "https://urlscan.io/api/v1/result/01a06b27-24a3-778f-aa37-fdbf00d60993/",
+   "screenshot": "https://urlscan.io/screenshots/01a06b27-24a3-778f-aa37-fdbf00d60993.png"
+  },
+  {
+   "submitter": {},
+   "canonical": {
+    "task": {
+     "url": "data.phantomxp.com"
+    },
+    "page": {
+     "url": "datausa.io/profile/geo/champaign-county-il"
+    }
+   },
+   "task": {
+    "visibility": "public",
+    "method": "api",
+    "domain": "data.phantomxp.com",
+    "apexDomain": "phantomxp.com",
+    "time": "2026-08-19T21:42:37.881Z",
+    "uuid": "01a01bf9-bdf1-760b-9e44-010c81e47163",
+    "url": "http://data.phantomxp.com/"
+   },
+   "stats": {
+    "uniqIPs": 12,
+    "uniqCountries": 1,
+    "dataLength": 10964630,
+    "encodedDataLength": 9412630,
+    "requests": 46
+   },
+   "page": {
+    "country": "US",
+    "server": "nginx/1.18.0 (Ubuntu)",
+    "redirected": "off-domain",
+    "ip": "34.133.93.172",
+    "apexDomainAgeDays": 3817,
+    "language": "en",
+    "mimeType": "text/html",
+    "title": "Champaign County, IL | Data USA",
+    "url": "https://datausa.io/profile/geo/champaign-county-il",
+    "tlsValidDays": 89,
+    "tlsAgeDays": 57,
+    "ptr": "172.93.133.34.bc.googleusercontent.com",
+    "domainAgeDays": 3817,
+    "tlsValidFrom": "2026-06-23T12:41:43.000Z",
+    "domain": "datausa.io",
+    "umbrellaRank": 721170,
+    "apexDomain": "datausa.io",
+    "asnname": "GOOGLE-CLOUD-PLATFORM - Google LLC, US",
+    "asn": "AS396982",
+    "tlsIssuer": "YE1",
+    "status": "200"
+   },
+   "labels": [],
+   "_id": "01a01bf9-bdf1-760b-9e44-010c81e47163",
+   "_score": null,
+   "sort": [
+    1787175757881,
+    "01a01bf9-bdf1-760b-9e44-010c81e47163"
+   ],
+   "result": "https://urlscan.io/api/v1/result/01a01bf9-bdf1-760b-9e44-010c81e47163/",
+   "screenshot": "https://urlscan.io/screenshots/01a01bf9-bdf1-760b-9e44-010c81e47163.png"
+  },
+  {
+   "submitter": {},
+   "canonical": {
+    "task": {
+     "url": "datausa.io/profile/geo/stevenson-wa"
+    },
+    "page": {
+     "url": "datausa.io/profile/geo/stevenson-wa"
+    }
+   },
+   "task": {
+    "visibility": "public",
+    "method": "api",
+    "domain": "datausa.io",
+    "apexDomain": "datausa.io",
+    "time": "2026-08-15T02:22:47.524Z",
+    "uuid": "01a0033a-71d8-726f-8e03-ee6b6d403c1f",
+    "url": "https://datausa.io/profile/geo/stevenson-wa/"
+   },
+   "stats": {
+    "uniqIPs": 13,
+    "uniqCountries": 2,
+    "dataLength": 9947660,
+    "encodedDataLength": 8535637,
+    "requests": 47
+   },
+   "page": {
+    "country": "US",
+    "server": "nginx/1.18.0 (Ubuntu)",
+    "ip": "34.133.93.172",
+    "apexDomainAgeDays": 3812,
+    "language": "en",
+    "mimeType": "text/html",
+    "title": "Stevenson, WA | Data USA",
+    "url": "https://datausa.io/profile/geo/stevenson-wa/",
+    "tlsValidDays": 89,
+    "tlsAgeDays": 52,
+    "ptr": "172.93.133.34.bc.googleusercontent.com",
+    "domainAgeDays": 3812,
+    "tlsValidFrom": "2026-06-23T12:41:43.000Z",
+    "domain": "datausa.io",
+    "umbrellaRank": 703397,
+    "apexDomain": "datausa.io",
+    "asnname": "GOOGLE-CLOUD-PLATFORM - Google LLC, US",
+    "asn": "AS396982",
+    "tlsIssuer": "YE1",
+    "status": "200"
+   },
+   "labels": [],
+   "_id": "01a0033a-71d8-726f-8e03-ee6b6d403c1f",
+   "_score": null,
+   "sort": [
+    1786760567524,
+    "01a0033a-71d8-726f-8e03-ee6b6d403c1f"
+   ],
+   "result": "https://urlscan.io/api/v1/result/01a0033a-71d8-726f-8e03-ee6b6d403c1f/",
+   "screenshot": "https://urlscan.io/screenshots/01a0033a-71d8-726f-8e03-ee6b6d403c1f.png"
+  },
+  {
+   "submitter": {},
+   "canonical": {
+    "task": {
+     "url": "datausa.io"
+    },
+    "page": {
+     "url": "datausa.io"
+    }
+   },
+   "task": {
+    "visibility": "public",
+    "method": "api",
+    "domain": "datausa.io",
+    "apexDomain": "datausa.io",
+    "time": "2026-08-12T23:42:51.441Z",
+    "uuid": "019ff85b-52be-768f-a3e1-1e99469ae50d",
+    "url": "http://datausa.io/",
+    "tags": [
+     "tranco_l76g4"
+    ]
+   },
+   "stats": {
+    "uniqIPs": 10,
+    "uniqCountries": 2,
+    "dataLength": 9764426,
+    "encodedDataLength": 9146301,
+    "requests": 57
+   },
+   "page": {
+    "country": "US",
+    "server": "nginx/1.18.0 (Ubuntu)",
+    "redirected": "https-only",
+    "ip": "34.133.93.172",
+    "apexDomainAgeDays": 3810,
+    "language": "en",
+    "mimeType": "text/html",
+    "title": "Data USA",
+    "url": "https://datausa.io/",
+    "tlsValidDays": 89,
+    "tlsAgeDays": 50,
+    "ptr": "172.93.133.34.bc.googleusercontent.com",
+    "domainAgeDays": 3810,
+    "tlsValidFrom": "2026-06-23T12:41:43.000Z",
+    "domain": "datausa.io",
+    "umbrellaRank": 725489,
+    "apexDomain": "datausa.io",
+    "asnname": "GOOGLE-CLOUD-PLATFORM - Google LLC, US",
+    "asn": "AS396982",
+    "tlsIssuer": "YE1",
+    "status": "200"
+   },
+   "labels": [],
+   "_id": "019ff85b-52be-768f-a3e1-1e99469ae50d",
+   "_score": null,
+   "sort": [
+    1786578171441,
+    "019ff85b-52be-768f-a3e1-1e99469ae50d"
+   ],
+   "result": "https://urlscan.io/api/v1/result/019ff85b-52be-768f-a3e1-1e99469ae50d/",
+   "screenshot": "https://urlscan.io/screenshots/019ff85b-52be-768f-a3e1-1e99469ae50d.png"
+  },
+  {
+   "submitter": {},
+   "canonical": {
+    "task": {
+     "url": "tabulated-data.omar-ibrahim.com"
+    },
+    "page": {
+     "url": "tabulated-data.omar-ibrahim.com"
+    }
+   },
+   "task": {
+    "visibility": "public",
+    "method": "api",
+    "domain": "tabulated-data.omar-ibrahim.com",
+    "apexDomain": "omar-ibrahim.com",
+    "time": "2026-08-12T08:20:27.554Z",
+    "uuid": "019ff50e-e055-7610-97df-8aa6c24db2d7",
+    "url": "http://tabulated-data.omar-ibrahim.com/"
+   },
+   "stats": {
+    "uniqIPs": 3,
+    "uniqCountries": 2,
+    "dataLength": 604906,
+    "encodedDataLength": 289800,
+    "requests": 9
+   },
+   "page": {
+    "server": "cloudflare",
+    "redirected": "https-only",
+    "ip": "188.114.96.3",
+    "apexDomainAgeDays": 2596,
+    "language": "en",
+    "mimeType": "text/html",
+    "title": "Average Wage by Occupation in the United States (2014 \u00e2\u20ac\u201c 2020)",
+    "url": "https://tabulated-data.omar-ibrahim.com/",
+    "tlsValidDays": 90,
+    "tlsAgeDays": 10,
+    "domainAgeDays": 1366,
+    "tlsValidFrom": "2026-08-02T08:08:46.000Z",
+    "domain": "tabulated-data.omar-ibrahim.com",
+    "apexDomain": "omar-ibrahim.com",
+    "asnname": "CLOUDFLARENET - Cloudflare, Inc., US",
+    "asn": "AS13335",
+    "tlsIssuer": "WE1",
+    "status": "200"
+   },
+   "labels": [],
+   "_id": "019ff50e-e055-7610-97df-8aa6c24db2d7",
+   "_score": null,
+   "sort": [
+    1786522827554,
+    "019ff50e-e055-7610-97df-8aa6c24db2d7"
+   ],
+   "result": "https://urlscan.io/api/v1/result/019ff50e-e055-7610-97df-8aa6c24db2d7/",
+   "screenshot": "https://urlscan.io/screenshots/019ff50e-e055-7610-97df-8aa6c24db2d7.png"
+  }
+ ],
+ "total": 59,
+ "took": 290,
+ "has_more": false
+}
