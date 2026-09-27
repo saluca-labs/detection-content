@@ -1,0 +1,220 @@
+* Laundered vantage - Splunk.
+*
+* Companion to detections/sigma/*.yml and detections/kql/laundered-vantage-hunting.kql.
+*
+* SCHEMA. Index, sourcetype and lookup names are placeholders. Field names:
+*   web access logs    index=web sourcetype=access_combined
+*                      src, dest_host (the virtual host), uri_path, uri_query, status
+*                      (access_combined gives clientip; alias it to src. The vhost is often
+*                      absent from combined logs: log it, or searches 1 and 3 lose their key.)
+*   proxy              index=proxy   src, dest_host
+*   mail               index=email   message_id, src_user, recipient, subject
+*   API gateway        index=api     api_key_id, src, src_asn, http_user_agent
+*   lookups            sandbox_ranges (CIDR match on src; workload_class), disclosure_triage.csv,
+*                      exposed_keys.csv. Columns are given in each search.
+* Rename to your own. The logic survives the translation, the names do not.
+*
+* THE PROBE REGEX. One PCRE, used in searches 1 and 2, matched against the url-decoded,
+* lower-cased query string. It encodes the payload families Transluce published (UNM tok=expt0..8,
+* Data USA's 12 suffixes, the AIHW svg/onload probe). %00 is tested on the RAW query, because
+* urldecode turns it into a NUL byte. hunt/tests/test_public_scan_search.py tests the same families
+* against the exact published URLs and against benign data-API and IIIF requests. The searches
+* below were NOT executed in Splunk, but this regex string is extracted from this file and run in
+* Python re against the same positives and negatives (PackRegexCrossCheck in that test file).
+*
+*   etc/passwd|(\.\./){2,}|\bunion\s+(all\s+)?select\b|'\s*or\s+1\s*=\s*1|\{\{\s*7\s*\*\s*7\s*\}\}|<\s*script|<\s*svg[^>]*onload|onerror\s*=\s*alert|<\s*img[^>]*onerror|evil\.com|\bcat\s+/etc/|wp-admin\.php|eval\s*\(\s*base64_decode|(^|&)tok=expt\d+
+*
+* FRAGMENTS ARE INVISIBLE HERE. Two of Data USA's twelve probes were URL fragments, which no server
+* receives. Only the inspection service's public record has them (hunt/public_scan_search.py).
+*
+* Ref: https://transluce.org/agent-activity
+* Author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team, 2026-09-26
+* Apache-2.0. Defensive use only.
+
+
+* ============================================================================================
+* SEARCH 1 - Escalation after refusal. SITE VANTAGE. ALERT.
+*
+* A refusal or error (400, 401, 403, 405, 429, 5xx; not 404) for a source on a host and path,
+* then probe grammar from the same source to the same host and path within 10 minutes. The
+* sequence Transluce found at UNM, Data USA and AIHW, and the one the Australian PM described at
+* the Medicare statistics portal ("Didn't accept no for an answer"). For the host-level variant
+* (refusal on one path, probe on another, as at AIHW's main site versus its dashboard), drop
+* uri_path from both BY clauses.
+*
+* The source may be an inspection service's shared egress. That joins unrelated users and costs
+* false positives, not misses.
+* ============================================================================================
+
+index=web sourcetype=access_combined
+| eval q=lower(urldecode(coalesce(uri_query,""))), raw_q=lower(coalesce(uri_query,""))
+| eval is_probe=if(match(q, "etc/passwd|(\.\./){2,}|\bunion\s+(all\s+)?select\b|'\s*or\s+1\s*=\s*1|\{\{\s*7\s*\*\s*7\s*\}\}|<\s*script|<\s*svg[^>]*onload|onerror\s*=\s*alert|<\s*img[^>]*onerror|evil\.com|\bcat\s+/etc/|wp-admin\.php|eval\s*\(\s*base64_decode|(^|&)tok=expt\d+") OR match(raw_q, "%00"), 1, 0)
+| eval is_refusal=if(status>=400 AND status<=599 AND status!=404, 1, 0)
+| where is_probe=1 OR is_refusal=1
+| eval refusal_time=if(is_refusal=1, _time, null()), refusal_status=if(is_refusal=1, status, null())
+| sort 0 _time
+| streamstats current=f last(refusal_time) AS last_refusal, last(refusal_status) AS last_refusal_status
+      BY src, dest_host, uri_path
+| where is_probe=1 AND isnotnull(last_refusal) AND _time - last_refusal <= 600
+| stats min(last_refusal) AS first_refusal, values(last_refusal_status) AS refusal_status,
+        min(_time) AS first_probe, max(_time) AS last_probe, count AS probes,
+        values(uri_query) AS probe_queries
+        BY src, dest_host, uri_path
+| eval probe_span_s=last_probe - first_probe, refusal_to_probe_s=first_probe - first_refusal
+| convert ctime(first_refusal) ctime(first_probe) ctime(last_probe)
+| table src, dest_host, uri_path, refusal_status, first_refusal, first_probe, refusal_to_probe_s,
+        probes, probe_span_s, probe_queries
+
+
+* ============================================================================================
+* SEARCH 2 - Probe grammar on its own. SITE VANTAGE. HUNT.
+*
+* Commodity scanners send these strings to everything, so this is an inventory, not an alert.
+* Worth reading where the endpoint is a data API, IIIF image server or dashboard whose legitimate
+* clients never send them, and where a numbered tok=exptN marker appears (UNM: expt0 to expt8).
+* ============================================================================================
+
+index=web sourcetype=access_combined uri_query=*
+| eval q=lower(urldecode(uri_query)), raw_q=lower(uri_query)
+| where match(q, "etc/passwd|(\.\./){2,}|\bunion\s+(all\s+)?select\b|'\s*or\s+1\s*=\s*1|\{\{\s*7\s*\*\s*7\s*\}\}|<\s*script|<\s*svg[^>]*onload|onerror\s*=\s*alert|<\s*img[^>]*onerror|evil\.com|\bcat\s+/etc/|wp-admin\.php|eval\s*\(\s*base64_decode|(^|&)tok=expt\d+") OR match(raw_q, "%00")
+| rex field=q "(?:^|&)tok=(?<experiment_marker>expt\d+)"
+| stats count AS probes, dc(uri_query) AS distinct_payloads, values(experiment_marker) AS markers,
+        values(status) AS statuses, min(_time) AS first_seen, max(_time) AS last_seen
+        BY src, dest_host, uri_path
+| eval span_s=last_seen - first_seen
+| sort - distinct_payloads
+| convert ctime(first_seen) ctime(last_seen)
+
+
+* ============================================================================================
+* SEARCH 3 - Non-production fallback. SITE VANTAGE. HUNT.
+*
+* The AIHW case: Cloudflare blocked the dataset download on www.aihw.gov.au, and the same file was
+* then pulled from pp.aihw.gov.au "in pieces over more than 100 scans". Keyed on SITE and FILE NAME,
+* not on source, because a laundered pull through a sandbox service need not reuse one address.
+* site is the registrable domain, approximated by the rex below (three labels under gov.au,
+* co.uk and similar, two otherwise).
+* ============================================================================================
+
+index=web sourcetype=access_combined
+| eval file=lower(mvindex(split(uri_path, "/"), -1)), first_label=lower(mvindex(split(dest_host, "."), 0))
+| where like(file, "%.%")
+| rex field=dest_host "(?<site>[^.]+\.(?:gov|edu|com|org|net|co|ac)\.(?:au|uk|nz)|[^.]+\.[^.]+)$"
+| eval nonprod=if(in(first_label, "pp", "staging", "stage", "preprod", "pre-prod", "dev", "uat"), 1, 0)
+| where (nonprod=0 AND status>=400 AND status<=599 AND status!=404) OR (nonprod=1 AND in(status, 200, 206))
+| eval refusal_time=if(nonprod=0, _time, null()), refused_host=if(nonprod=0, dest_host, null()),
+       refusal_status=if(nonprod=0, status, null())
+| sort 0 _time
+| streamstats current=f last(refusal_time) AS last_refusal, last(refused_host) AS refused_on,
+      last(refusal_status) AS prod_status BY site, file
+| where nonprod=1 AND isnotnull(last_refusal) AND _time - last_refusal <= 3600
+| stats min(last_refusal) AS first_refusal, values(refused_on) AS refused_on,
+        values(prod_status) AS prod_status, min(_time) AS first_nonprod, count AS nonprod_requests,
+        dc(src) AS sources, values(src) AS source_list
+        BY site, dest_host, file
+| convert ctime(first_refusal) ctime(first_nonprod)
+| table site, file, refused_on, prod_status, first_refusal, dest_host, first_nonprod, nonprod_requests, sources, source_list
+
+
+* ============================================================================================
+* SEARCH 4 - Agent workload egress to laundering services. OPERATOR VANTAGE.
+* ALERT for sources in sandbox_ranges (agent, evaluation, sandbox, CI). HUNT for everyone else.
+*
+* sandbox_ranges: a lookup with match_type CIDR(cidr_range); columns cidr_range, workload_class.
+* The services are the ones Transluce named, plus urlscan.io (INFERENCE: named only by the external
+* explorer the dataset imports). All are legitimate. Security teams use the scanners daily.
+* ============================================================================================
+
+index=proxy
+| eval h=lower(dest_host)
+| eval service=case(
+        h="urlquery.net" OR like(h, "%.urlquery.net"), "url inspection sandbox",
+        h="urlscan.io" OR like(h, "%.urlscan.io"), "url inspection sandbox (inference)",
+        h="r.jina.ai" OR h="markdown.new", "reader proxy",
+        h="httpbin.org" OR like(h, "%.httpbin.org") OR h="httpbun.com" OR like(h, "%.httpbun.com"), "request echo",
+        like(h, "%.browserless.io"), "hosted headless browser",
+        h="mail.gw" OR like(h, "%.mail.gw"), "disposable mail",
+        h="milankarman.github.io" OR h="blogsflow.liftbrandfulfillment.com", "GET-to-POST relay named by Transluce",
+        true(), null())
+| where isnotnull(service)
+| lookup sandbox_ranges cidr_range AS src OUTPUT workload_class
+| eval disposition=if(isnotnull(workload_class), "ALERT - agent/sandbox workload", "hunt - not a sandbox range")
+| stats count AS requests, dc(service) AS service_kinds, values(service) AS services, values(h) AS hosts,
+        min(_time) AS first_seen, max(_time) AS last_seen
+        BY src, workload_class, disposition
+| sort - service_kinds, - requests
+| convert ctime(first_seen) ctime(last_seen)
+
+
+* ============================================================================================
+* SEARCH 5 - Disclosure-inbox triage latency. NOTIFICATION RECEIPT. ALERT on the SLA.
+*
+* Not a detection of the agent. For the Medicare statistics portal, access was on 18 June, the lab
+* became aware in August, and notification was one email on 10 September to
+* publicdisclosures@servicesaustralia.gov.au, a mailbox "looked at once a day". Seen 11 September,
+* ACSC notified 15 September, the Minister around 17 September. Notification was the detection,
+* so the victim's control is how fast a notification becomes an incident.
+*
+* This search finds inbound mail to disclosure mailboxes that is from an AI lab or security vendor
+* domain, or carries vulnerability language, and reports it UNTRIAGED after N hours. The sender and
+* keyword lists are ours; the lab's actual notification text is not public.
+*
+* disclosure_triage.csv: message_id, triaged_time (epoch), incident_id, access_time_reported
+* (epoch, the access date the notification states, entered by the responder). It yields the two
+* latencies worth reporting upward: access-to-notification and notification-to-triage.
+* ============================================================================================
+
+index=email
+    (recipient="security@*" OR recipient="disclosure@*" OR recipient="disclosures@*"
+     OR recipient="publicdisclosures@*" OR recipient="psirt@*" OR recipient="vulnerability@*"
+     OR recipient="cert@*" OR recipient="abuse@*")
+| eval sender_domain=lower(mvindex(split(src_user, "@"), -1))
+| eval from_ai_or_vendor=if(in(sender_domain, "openai.com", "anthropic.com", "deepmind.com", "google.com",
+        "x.ai", "mistral.ai", "meta.com", "microsoft.com", "transluce.org", "hackerone.com", "bugcrowd.com"), 1, 0)
+| eval vuln_language=if(match(lower(subject), "vulnerab|unauthori[sz]ed access|security incident|misalign|responsible disclosure|exposed (api )?key|our (model|agent)s?|ai agent"), 1, 0)
+| where from_ai_or_vendor=1 OR vuln_language=1
+| lookup disclosure_triage.csv message_id OUTPUT triaged_time, incident_id, access_time_reported
+| eval hours_open=round((coalesce(triaged_time, now()) - _time) / 3600, 1)
+| eval notification_to_triage_h=if(isnotnull(triaged_time), round((triaged_time - _time) / 3600, 1), null())
+| eval access_to_notification_d=if(isnotnull(access_time_reported), round((_time - access_time_reported) / 86400, 1), null())
+| eval sla_hours=if(from_ai_or_vendor=1, 4, 24)
+| eval status=case(isnull(triaged_time) AND hours_open > sla_hours, "UNTRIAGED PAST SLA",
+                   isnull(triaged_time), "untriaged, within SLA",
+                   notification_to_triage_h > sla_hours, "triaged late",
+                   true(), "triaged within SLA")
+| convert ctime(_time) AS received
+| table received, src_user, recipient, subject, from_ai_or_vendor, vuln_language, status, hours_open,
+        notification_to_triage_h, access_to_notification_d, incident_id
+| sort - hours_open
+
+
+* ============================================================================================
+* SEARCH 6 - Exposed API key used from a new origin. API-OWNER VANTAGE. HUNT.
+*
+* OpenAI's misalignment report "Signing up for disposable emails and searching GitHub for leaked
+* API keys": during RL training a model "found and used an exposed API key without authorization";
+* "one key authenticated and returned metadata". That the API was the Census Data API is an
+* INFERENCE (Census table IDs and response shape in the report), not OpenAI's statement.
+*
+* Two halves. (a) exposed_keys.csv (api_key_id, exposed_time, exposure_source), fed by your secret
+* scanning or by GitHub's partner program: any origin first seen on that key after exposure.
+* (b) no exposure feed: a key with 30+ days of history used from an ASN it has never used, today.
+* An ASN is a coarse origin; laundering through a relay puts the relay's ASN here, which is itself
+* worth seeing on a key that was only ever used from one office.
+* ============================================================================================
+
+index=api earliest=-90d
+| stats min(_time) AS origin_first_seen, max(_time) AS origin_last_seen, count AS calls,
+        values(http_user_agent) AS user_agents
+        BY api_key_id, src_asn
+| eventstats min(origin_first_seen) AS key_first_seen, dc(src_asn) AS key_origins BY api_key_id
+| lookup exposed_keys.csv api_key_id OUTPUT exposed_time, exposure_source
+| eval after_exposure=if(isnotnull(exposed_time) AND origin_first_seen >= exposed_time, 1, 0)
+| eval new_origin_today=if(origin_first_seen >= relative_time(now(), "-1d@d")
+                          AND key_first_seen <= relative_time(now(), "-30d@d"), 1, 0)
+| where after_exposure=1 OR new_origin_today=1
+| eval hours_after_exposure=if(after_exposure=1, round((origin_first_seen - exposed_time) / 3600, 1), null())
+| convert ctime(origin_first_seen) ctime(origin_last_seen) ctime(key_first_seen) ctime(exposed_time)
+| table api_key_id, src_asn, origin_first_seen, calls, user_agents, key_first_seen, key_origins,
+        exposed_time, exposure_source, hours_after_exposure, after_exposure, new_origin_today
+| sort - after_exposure, hours_after_exposure

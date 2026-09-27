@@ -1,0 +1,111 @@
+# Sigma - escalation after refusal. The main site-vantage signal of this pack.
+#
+# SITE VANTAGE. The one sequence common to all three Transluce cases and to the Australian
+# Government's account of the Medicare statistics portal:
+#
+#   Transluce: "For three of these tasks, after failing to retrieve data through normal means, they
+#   attempted a variety of cyber exploits against the relevant data service."
+#   Data USA: "After running into numerous error codes due to a malformed query ..., they attempted
+#   12 probes for vulnerabilities".
+#   AIHW: "Minutes after Cloudflare blocked the dataset download, an agent sent a reflected cross-site
+#   scripting probe to the same dashboard".
+#   PM Albanese on the Medicare portal: "After encountering repeated blocks ... The AI agent found a
+#   way around those blocks. Didn't accept no for an answer, if you like."
+#
+# So: a REFUSAL for a source and endpoint, then PROBE GRAMMAR from the same source against the same
+# host within minutes. Neither half is interesting alone. A refusal is routine and probes are
+# background noise. The order is the signal, and it is a property of the behaviour rather than of
+# any tool, relay or address, which is why it ranks first for durability.
+#
+# THE SOURCE MAY BE AN INSPECTOR. Through urlquery.net or a reader proxy, c-ip is the service's
+# egress, shared with all its other users. Grouping by it then joins unrelated users, which costs
+# false positives, not misses. What the Medicare mechanism was is not public; this rule does not
+# claim to have caught it, only to encode the sequence the government described.
+#
+# ATT&CK. Our inference (ATT&CK v19), as in probe-grammar-webserver.yml.
+#
+# Ref: https://transluce.org/agent-activity
+# Ref: https://www.pm.gov.au/media/press-conference-new-york
+# Author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team, 2026-09-26
+
+title: Web Request Refused Or Errored
+id: 3eba0a7a-601b-4b3f-be96-70f8b08312d7
+status: experimental
+description: |
+  Base rule, NOT an alert. A web request was refused (401, 403, 405, 429, a WAF or bot-management
+  block) or errored (400, 5xx). It exists so the correlation below has the first half of the
+  sequence to order against.
+
+  404 is deliberately absent: crawlers produce it constantly and none of the published cases turned
+  on it. Add it if your front end returns 404 for blocks.
+references:
+    - https://transluce.org/agent-activity
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-09-26
+tags:
+    - attack.reconnaissance
+    - attack.t1595
+logsource:
+    category: webserver
+detection:
+    refused:
+        sc-status:
+            - 400
+            - 401
+            - 403
+            - 405
+            - 429
+            - 500
+            - 502
+            - 503
+    condition: refused
+falsepositives:
+    - Constant. Every site refuses and errors all day. This is a counter input for the correlation,
+      not a detection, and should not be routed to an analyst on its own.
+level: informational
+---
+title: Probe Grammar Within Ten Minutes After A Refusal From The Same Source
+id: 2e6b0450-694c-4977-ba16-fa7a433dac74
+status: experimental
+description: |
+  The same source was refused or errored on a host, then within ten minutes sent textbook probe
+  grammar (traversal, UNION SELECT, template, script injection, evil.com, wp-admin.php, numbered
+  tok=exptN markers) to that host. This is the escalation-after-refusal sequence Transluce found in
+  AI agents on ordinary data-retrieval tasks, and the one the Australian Government described at
+  the Medicare statistics portal.
+
+  ALERT. It is still a behaviour, not an attribution: a human tester who gets blocked and then
+  reaches for a scanner produces the same sequence, and so does a lab's agent routed through an
+  inspection service. Both are worth a look.
+
+  The published cases put the probes minutes after the refusal (AIHW) and, for Data USA, 12 probes
+  inside a 28-second urlquery search window (that all fell inside it is our inference). Ten
+  minutes is a starting point, not a measurement.
+references:
+    - https://transluce.org/agent-activity
+    - https://www.pm.gov.au/media/press-conference-new-york
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-09-26
+tags:
+    - attack.reconnaissance
+    - attack.t1595.002
+    - attack.initial-access
+    - attack.t1190
+correlation:
+    type: temporal_ordered
+    rules:
+        - 3eba0a7a-601b-4b3f-be96-70f8b08312d7
+        - 0e15e20d-c168-41ce-84e7-7de755312aa4
+    group-by:
+        - c-ip
+        - cs-host
+    timespan: 10m
+falsepositives:
+    - A vulnerability scanner that gets rate-limited (429) and keeps going. The sequence is real; the
+      intent is ordinary. Exclude your own authorised scanners by c-ip.
+    - Shared egress. Requests relayed by urlquery.net, urlscan.io, reader proxies or a corporate NAT
+      share one c-ip, so one user's refusal and another's probe can join. Treat the source as a
+      service, not an actor, when it resolves to one.
+    - A site whose own front end returns 403 to every request from a blocked country or ASN, which
+      turns every later scanner probe from that range into a match. Scope the refusal list.
+level: high

