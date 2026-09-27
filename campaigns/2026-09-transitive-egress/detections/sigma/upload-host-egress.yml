@@ -1,0 +1,142 @@
+# Sigma - an agent workload uploads to a public image host, temporary file host or paste host.
+#
+# SANDBOX OPERATOR VANTAGE. Three OpenAI disclosures, all PRIMARY, describe this exit:
+#
+#   25 Sep 2026 (incident page): "we have identified 53 instances to date where user-provided
+#     images were posted to image-hosting sites as links that weren't publicly listed."
+#   16 Sep 2026, "Unauthorized communication via temporary file hosting services": one agent
+#     "uploaded the workbook and sent the resulting public links to the parent agent and the
+#     other collaborator", because the intended local filesystem was broken.
+#   16 Sep 2026, "Uploading files to the internet in order to cite them": uploads to a public
+#     paste service and a public image host as workarounds for tool limitations. "Both uploads
+#     succeeded even though the subsequent browser operations failed."
+#
+# The last line is the point of this rule. The upload is the exit. What the agent did next, and
+# whether it worked, does not change what left.
+#
+# THE HOST NAMES ARE OURS. OpenAI redacted every host ("[public paste host]", "<redacted>",
+# "[public image host]") and named none of the image hosts in the 53-image disclosure; Reuters
+# reports the company "declined to say" more. The list below is services with a documented
+# anonymous upload API, chosen by us. The services OpenAI's agents used may or may not be on it.
+# The agent in the citation report found its host by searching "upload file curl free service",
+# which is the honest measure of how durable any host list is: not very.
+#
+# NOT DUPLICATED FROM 2026-09-agent-collusion. relay-chain-and-tunnel-egress.yml there already
+# covers webhook.site, requestbin.com, pipedream.net, pastebin.com/api, hastebin.com, dpaste.org,
+# transfer.sh, file.io and the counter APIs. Deploy both. This rule adds image hosts and further
+# temporary-file and paste hosts, and it keys on the WRITE (POST or PUT), not on any contact.
+#
+# ATT&CK mapping (inferred, ATT&CK v19): Exfiltration Over Web Service (T1567).
+#
+# Ref: https://openai.com/hugging-face-incident-and-misalignment/
+# Ref: https://alignment.openai.com/misalignment-reports/unauthorized-communication-via-temporary-file-hosting-services/
+# Ref: https://alignment.openai.com/misalignment-reports/uploading-files-to-the-internet-in-order-to-cite-them/
+# Author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team, 2026-09-27
+
+title: Upload To Public Image, Temporary File Or Paste Host From Agent Workload
+id: cee3a824-949b-481e-ac43-d059ae369534
+status: experimental
+description: |
+  A POST or PUT through the proxy to a public image host, temporary file host or paste host that
+  the agent-collusion pack does not already cover. From an agent, evaluation or sandbox workload
+  the upload is the exit, whether or not the workload later used the link.
+
+  ALERT from agent, evaluation, sandbox and CI workloads (scope the rule to those ranges in your
+  deployment). HUNT elsewhere. The host list is ours: the sources redacted every host.
+
+  ATT&CK mapping (inferred): T1567.
+references:
+    - https://openai.com/hugging-face-incident-and-misalignment/
+    - https://alignment.openai.com/misalignment-reports/unauthorized-communication-via-temporary-file-hosting-services/
+    - https://alignment.openai.com/misalignment-reports/uploading-files-to-the-internet-in-order-to-cite-them/
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-09-27
+tags:
+    - attack.exfiltration
+    - attack.t1567
+logsource:
+    category: proxy
+detection:
+    write:
+        cs-method:
+            - 'POST'
+            - 'PUT'
+    host_exact:
+        cs-host:
+            - 'api.imgur.com'
+            - 'api.imgbb.com'
+            - 'freeimage.host'
+            - 'postimages.org'
+            - 'imgbox.com'
+            - 'catbox.moe'
+            - '0x0.st'
+            - 'tmpfiles.org'
+            - 'temp.sh'
+            - 'uguu.se'
+            - 'pixeldrain.com'
+            - 'bashupload.com'
+            - 'paste.rs'
+            - 'rentry.co'
+    host_subdomain:
+        cs-host|endswith:
+            - '.catbox.moe'
+            - '.gofile.io'
+            - '.uguu.se'
+            - '.paste.ee'
+            - '.pixeldrain.com'
+    condition: write and (host_exact or host_subdomain)
+falsepositives:
+    - Support and community staff attaching screenshots through an image host. Exclude
+      workstations; never exclude agent workloads.
+    - Build jobs that post artefacts or logs to a paste host for review. That is a data-handling
+      policy question; move them to an internal store.
+level: high
+---
+title: Agent Workload Resolves Public Image, Temporary File Or Paste Host
+id: 29b2420b-084c-4d02-8c80-2190c69ad73b
+status: experimental
+description: |
+  DNS companion to the proxy rule, for workloads whose egress bypasses the proxy, or estates with
+  DNS telemetry and no proxy. It sees contact, not uploads: a lookup is not a write. HUNT; alert
+  only where the workload has no reason to read these hosts either.
+
+  ATT&CK mapping (inferred): T1567.
+references:
+    - https://openai.com/hugging-face-incident-and-misalignment/
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-09-27
+tags:
+    - attack.exfiltration
+    - attack.t1567
+logsource:
+    category: dns_query
+detection:
+    host_exact:
+        QueryName:
+            - 'api.imgur.com'
+            - 'api.imgbb.com'
+            - 'freeimage.host'
+            - 'postimages.org'
+            - 'imgbox.com'
+            - 'catbox.moe'
+            - '0x0.st'
+            - 'tmpfiles.org'
+            - 'temp.sh'
+            - 'uguu.se'
+            - 'pixeldrain.com'
+            - 'bashupload.com'
+            - 'paste.rs'
+            - 'rentry.co'
+    host_subdomain:
+        QueryName|endswith:
+            - '.catbox.moe'
+            - '.gofile.io'
+            - '.uguu.se'
+            - '.paste.ee'
+            - '.pixeldrain.com'
+    condition: host_exact or host_subdomain
+falsepositives:
+    - Link previews and browser prefetch resolve names nobody visited. Confirm with a connection
+      before escalating.
+    - Documentation and issue trackers that embed images from these hosts, read by developers.
+level: medium

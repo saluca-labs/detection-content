@@ -1,0 +1,216 @@
+// Transitive egress - Microsoft Sentinel and Defender XDR.
+//
+// Companion to detections/sigma/*.yml, detections/splunk/transitive-egress.spl and
+// hunt/transitive_egress_audit.py.
+//
+// SCHEMA. Built-in tables where one exists, placeholders where it does not:
+//   DnsEvents / ASimDnsActivityLogs   sandbox DNS: TimeGenerated, SrcIpAddr, DnsQuery,
+//                           DnsQueryTypeName, DnsResponseCodeName (ASIM names used below)
+//   CommonSecurityLog       proxy: SourceIP, DestinationHostName, RequestMethod, RequestURL
+//   SecurityIncident        alert lifecycle for query 7 and 8 (CreatedTime, FirstActivityTime,
+//                           Classification, ClassificationComment, Severity, Title)
+//   AlertLifecycle_CL       placeholder, when containment time is recorded elsewhere:
+//                           AlertId, RuleName, Category, FirstEventTime, DetectedTime, AckedTime,
+//                           ContainedTime
+//   RegistryPublish_CL      placeholder, registry operators only: Package, Version, Account,
+//                           AccountCreated, SrcIp
+//   watchlists              SandboxRanges (Cidr, WorkloadClass), ReleaseRunners (Cidr),
+//                           DocBuildWorkers (Cidr), DocBuildAllowlist (Host),
+//                           DnsAllowlist (Zone), DetectorScope (Detector, Environment, Excluded)
+//
+// EVERY THRESHOLD IS A STARTING POINT from the published record, not telemetry. Nothing here was
+// executed: there is no tenant behind this file. The outcome-grading regex in query 8 is run in
+// Python re by hunt/tests/test_transitive_egress_audit.py (PackRegexCrossCheck), which fails if
+// this copy and the SPL copy drift apart. RE2 and Python re agree on every construct it uses.
+//
+// Ref: https://alignment.openai.com/misalignment-reports/an-agent-used-dns-to-reach-an-external-chatbot/
+// Ref: https://rubyhack.ai/  https://research.jfrog.com/post/gemstuffer-openai-rubygems/
+// Author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team, 2026-09-27
+// Apache-2.0. Defensive use only.
+
+
+// ============================================================================================
+// QUERY 1 - Sandbox DNS shape per registered domain. SANDBOX OPERATOR. ALERT in sandboxes.
+// Registered domain approximated as the last two labels, three under common multi-label
+// suffixes. Entropy is not computed here; hunt/transitive_egress_audit.py dns computes it.
+// ============================================================================================
+let sandbox = _GetWatchlist('SandboxRanges') | project Cidr = tostring(Cidr), WorkloadClass;
+let multi_sfx = @"^((co|org|gov|ac|ltd|plc|net|sch|me)\.uk|(com|net|org|gov|edu)\.au|co\.(nz|jp|in|za|kr)|com\.(br|cn|mx|sg|tw|hk|tr|ar)|github\.io|(vercel|netlify)\.app|pages\.dev|workers\.dev)$";
+ASimDnsActivityLogs
+| where TimeGenerated > ago(1h)
+| evaluate ipv4_lookup(sandbox, SrcIpAddr, Cidr)
+| extend q = tolower(trim_end(@"\.", DnsQuery))
+| extend labels = split(q, ".")
+| extend n = array_length(labels)
+| extend reg2 = strcat_array(array_slice(labels, n - 2, n - 1), "."),
+         reg3 = strcat_array(array_slice(labels, n - 3, n - 1), ".")
+| extend reg = iff(n >= 3 and reg2 matches regex multi_sfx, reg3, reg2)
+| extend sub = iff(q == reg, "", substring(q, 0, strlen(q) - strlen(reg) - 1))
+| mv-apply l = labels to typeof(string) on (summarize max_label = max(strlen(l)))
+| extend odd = iff(DnsQueryTypeName in~ ("TXT", "NULL", "ANY", "NS"), 1, 0)
+| summarize queries = count(), unique_subdomains = dcountif(sub, sub != ""), max_name_len = max(strlen(q)),
+            max_label_len = max(max_label), odd = sum(odd), sources = make_set(SrcIpAddr, 20) by reg
+| extend odd_share = round(todouble(odd) / queries, 2)
+| extend flags = pack_array(iff(unique_subdomains >= 50, "high-cardinality", ""),
+                            iff(max_label_len >= 40 or max_name_len >= 100, "long-name", ""),
+                            iff(odd_share >= 0.5 and queries >= 10, "txt-heavy", ""))
+| extend flags = set_difference(flags, dynamic([""]))
+| where array_length(flags) > 0
+| order by unique_subdomains desc
+
+
+// ============================================================================================
+// QUERY 2 - Sandbox resolver answered, or was asked, outside the allowlist. RESOLVER OWNER.
+// ATTEMPT (any response code) and ANSWERED (NOERROR). Grade the attempt, not the outcome.
+// ============================================================================================
+let sandbox2 = _GetWatchlist('SandboxRanges') | project Cidr = tostring(Cidr), WorkloadClass;
+let allow = toscalar(_GetWatchlist('DnsAllowlist') | summarize make_list(tolower(tostring(Zone))));
+ASimDnsActivityLogs
+| where TimeGenerated > ago(1h)
+| evaluate ipv4_lookup(sandbox2, SrcIpAddr, Cidr)
+| extend q = tolower(trim_end(@"\.", DnsQuery))
+| mv-apply z = allow to typeof(string) on (summarize allowed = countif(q == z or q endswith strcat(".", z)))
+| where allowed == 0
+| extend grade = iff(DnsResponseCodeName =~ "NOERROR", "ANSWERED", "ATTEMPT")
+| summarize events = count(), distinct_names = dcount(q), grades = make_set(grade),
+            first = min(TimeGenerated), last = max(TimeGenerated) by SrcIpAddr, WorkloadClass
+| extend severity = case(set_has_element(grades, "ANSWERED"), "high: resolver answered outside allowlist",
+                         distinct_names >= 50, "high: breadth of attempts", "medium: attempts")
+
+
+// ============================================================================================
+// QUERY 3 - Package registry publish or webhook registration from a non-release workload.
+// Needs a TLS-inspecting proxy that logs method and URL.
+// ============================================================================================
+let release = _GetWatchlist('ReleaseRunners') | project Cidr = tostring(Cidr), Runner = "release";
+CommonSecurityLog
+| where TimeGenerated > ago(1d)
+| extend host = tolower(DestinationHostName), m = toupper(RequestMethod),
+         path = tostring(parse_url(RequestURL).Path)
+| extend action = case(
+    host == "rubygems.org" and m == "POST" and path matches regex @"^/+api/+v1/+gems/*$", "rubygems push",
+    host == "rubygems.org" and m == "POST" and path matches regex @"^/+api/+v1/+web_hooks", "rubygems webhook",
+    host == "upload.pypi.org" and m == "POST", "pypi upload",
+    host == "registry.npmjs.org" and m == "PUT", "npm publish",
+    host == "crates.io" and m == "PUT" and path matches regex @"^/+api/+v1/+crates/+new/*$", "crates publish",
+    "")
+| where isnotempty(action)
+| evaluate ipv4_lookup(release, SourceIP, Cidr, return_unmatched = true)
+| where isempty(Runner)
+| summarize publishes = count(), actions = make_set(action), first = min(TimeGenerated) by SourceIP
+| extend severity = iff(publishes >= 10, "critical: publish burst", "high")
+
+
+// ============================================================================================
+// QUERY 4 - Uploads to image, temporary file and paste hosts. SANDBOX OPERATOR.
+// EXTENDS 2026-09-agent-collusion. Host list is ours; the sources redacted every host.
+// ============================================================================================
+let sandbox4 = _GetWatchlist('SandboxRanges') | project Cidr = tostring(Cidr), WorkloadClass;
+let upload_rx = @"^(api\.imgur\.com|api\.imgbb\.com|freeimage\.host|postimages\.org|imgbox\.com|catbox\.moe|0x0\.st|tmpfiles\.org|temp\.sh|uguu\.se|pixeldrain\.com|bashupload\.com|paste\.rs|rentry\.co)$|\.(catbox\.moe|gofile\.io|uguu\.se|paste\.ee|pixeldrain\.com)$";
+CommonSecurityLog
+| where TimeGenerated > ago(1d)
+| where RequestMethod in~ ("POST", "PUT")
+| extend host = tolower(DestinationHostName)
+| where host matches regex upload_rx
+| evaluate ipv4_lookup(sandbox4, SourceIP, Cidr, return_unmatched = true)
+| extend scope = iff(isnotempty(WorkloadClass), "ALERT (agent workload)", "hunt")
+| summarize uploads = count(), hosts = make_set(host), first = min(TimeGenerated) by SourceIP, WorkloadClass, scope
+
+
+// ============================================================================================
+// QUERY 5 - Documentation build worker: off-allowlist fetch, publish, and fetch-then-publish
+// within 30 minutes. DOC-BUILD OPERATOR.
+// ============================================================================================
+let workers = _GetWatchlist('DocBuildWorkers') | project Cidr = tostring(Cidr);
+let doc_allow = toscalar(_GetWatchlist('DocBuildAllowlist') | summarize make_set(tolower(tostring(Host))));
+let legs = CommonSecurityLog
+    | where TimeGenerated > ago(1d)
+    | evaluate ipv4_lookup(workers, SourceIP, Cidr)
+    | extend host = tolower(DestinationHostName), m = toupper(RequestMethod),
+             path = tostring(parse_url(RequestURL).Path)
+    | extend leg = case(
+        host == "rubygems.org" and m == "POST" and path matches regex @"^/+api/+v1/+(gems|web_hooks)", "publish",
+        (host == "upload.pypi.org" and m == "POST") or (host in ("registry.npmjs.org", "crates.io") and m == "PUT"), "publish",
+        not(set_has_element(doc_allow, host)), "off-allowlist fetch",
+        "")
+    | where isnotempty(leg);
+legs
+| where leg == "publish"
+| join kind=leftouter (legs | where leg == "off-allowlist fetch" | project SourceIP, fetch_time = TimeGenerated, fetch_host = host) on SourceIP
+| extend loop = iff(isnotempty(fetch_time) and TimeGenerated between (fetch_time .. (fetch_time + 30m)), 1, 0)
+| summarize publishes = count(), fetch_then_publish = max(loop), fetched = make_set(fetch_host, 20) by SourceIP
+| union (legs | where leg == "off-allowlist fetch" | summarize fetches = count(), fetched = make_set(host, 20) by SourceIP)
+| extend severity = case(fetch_then_publish == 1, "critical: fetch then publish",
+                         publishes > 0, "critical: build worker published", "high: off-allowlist fetch")
+
+
+// ============================================================================================
+// QUERY 6 - Logged is not detected. Environments in DNS or proxy logs that no detector covers,
+// or that a detector explicitly excludes. COVERAGE AUDIT, weekly. Environment is whatever your
+// pipeline stamps on events (here, a Computer-to-environment watchlist is assumed).
+// ============================================================================================
+let scope = _GetWatchlist('DetectorScope')
+    | project Detector = tostring(Detector), EnvPattern = tolower(tostring(Environment)),
+              Excluded = tobool(Excluded);
+let seen = union
+    (ASimDnsActivityLogs | where TimeGenerated > ago(7d) | summarize events = count() by Environment = tolower(tostring(Dvc))),
+    (CommonSecurityLog | where TimeGenerated > ago(7d) | summarize events = count() by Environment = tolower(tostring(DeviceExternalID)))
+    | summarize events = sum(events) by Environment;
+seen
+| extend k = 1
+| join kind=leftouter (scope | extend k = 1) on k
+| extend hit = iff(EnvPattern == "*" or Environment == EnvPattern
+                   or (EnvPattern endswith "*" and Environment startswith trim_end(@"\*", EnvPattern)), 1, 0)
+| summarize covered_by = make_set_if(Detector, hit == 1 and not(Excluded)),
+            excluded_by = make_set_if(Detector, hit == 1 and Excluded), events = max(events) by Environment
+| where array_length(covered_by) == 0 or array_length(excluded_by) > 0
+| extend state = iff(array_length(excluded_by) > 0, "EXCLUDED BUT LOGGED", "NOT IN ANY DETECTOR SCOPE")
+| order by events desc
+
+
+// ============================================================================================
+// QUERY 7 - Response latency: event -> detect -> ack -> contain. RESPONSE METRICS.
+// OpenAI DNS incident as published: 11m48s, 2m55s, 2h29m24s. Flag containment more than 30
+// minutes after acknowledgement (OpenAI's own stated pause rule). No containment time is a flag.
+// ============================================================================================
+AlertLifecycle_CL
+| where TimeGenerated > ago(30d) and Category in~ ("egress", "dns", "upload", "publish")
+| extend event_to_detect = DetectedTime - FirstEventTime, detect_to_ack = AckedTime - DetectedTime,
+         ack_to_contain = ContainedTime - AckedTime
+| extend flag = case(isnull(AckedTime), "NOT ACKED",
+                     isnull(ContainedTime), "NOT CONTAINED",
+                     event_to_detect < 0s or detect_to_ack < 0s or ack_to_contain < 0s, "OUT OF ORDER",
+                     ack_to_contain > 30m, "CONTAINMENT > 30m AFTER ACK",
+                     "")
+| where isnotempty(flag)
+| project AlertId, RuleName, flag, event_to_detect, detect_to_ack, ack_to_contain
+
+
+// ============================================================================================
+// QUERY 8 - Outcome-graded suppression audit. Boundary-crossing incidents closed or downgraded
+// because the crossing returned nothing useful. MONITOR QUALITY. Review every row.
+// ============================================================================================
+let outcome_rx = @"no (useful )?(data|information|results?|response|content)|nothing (was )?returned|returned nothing|(attempt|request|lookup|query|connection|upload|access) (failed|timed out|was blocked|was unsuccessful)|failed to (obtain|retrieve|connect|resolve|reach)|timed? ?out|blocked by (the )?(proxy|policy|firewall)|(service|site) (had |has )?shut down|no (impact|harm) since";
+SecurityIncident
+| where TimeGenerated > ago(90d)
+| summarize arg_max(TimeGenerated, *) by IncidentNumber
+| where Title has_any ("egress", "DNS", "upload", "publish", "exfil")
+| where Status == "Closed" and Classification in ("BenignPositive", "FalsePositive", "Undetermined")
+| where tolower(ClassificationComment) matches regex outcome_rx
+| project IncidentNumber, Title, Severity, Classification, ClassificationComment, ClosedTime
+
+
+// ============================================================================================
+// QUERY 9 - Registry operator: timestamp-suffixed names within a day of their own publish time,
+// and publish bursts from accounts under a day old. HUNT.
+// ============================================================================================
+RegistryPublish_CL
+| where TimeGenerated > ago(7d)
+| extend ts_suffix = tolong(extract(@"(\d{10})\d{0,3}$", 1, Package))
+| extend suffix_skew = abs(datetime_diff('second', TimeGenerated, unixtime_seconds_todatetime(ts_suffix)))
+| extend generated_name = iff(isnotnull(ts_suffix) and suffix_skew <= 86400, 1, 0)
+| extend account_age_h = datetime_diff('hour', TimeGenerated, AccountCreated)
+| summarize publishes = count(), packages = dcount(Package), generated_names = sum(generated_name),
+            account_age_h = min(account_age_h) by Account, bin(TimeGenerated, 1h)
+| where generated_names > 0 or (account_age_h < 24 and publishes >= 10)
+| order by publishes desc

@@ -1,0 +1,162 @@
+# Sigma - a workload that is not a release pipeline publishes to a package registry, or registers
+# a registry webhook.
+#
+# SANDBOX OPERATOR VANTAGE (and any CI owner). The GemStuffer campaign used RubyGems as a return
+# channel: Socket (13 May 2026) described "junk gems published from new accounts" carrying scraped
+# council data, JFrog (15 Sep 2026) catalogued 3,022 campaign-associated packages and 3,315
+# name/version pairs, and noted that "The registry is the return channel for the collected data."
+# Kitts, Larsen and Von Arx (rubyhack.ai, 11 Sep 2026) also describe packages that "used RubyGems'
+# webhook system as a way to store data".
+#
+# ATTRIBUTION IS THE RESEARCHERS', NOT OURS AND NOT CONFIRMED. OpenAI: "Based on our review to
+# date, we have not been able to verify the specific claims of our models uploading malicious
+# packages detailed in the report." Ruby Central: "Based on the evidence available to us, we cannot
+# determine whether the packages were created or published by AI agents." These rules do not
+# depend on who did it. A publish from a workload that has no business publishing is the signal,
+# whoever is driving the workload.
+#
+# PACKAGE-REGISTRY PUBLISHES LOOK LIKE PUBLISHES. From a release pipeline these are routine. The
+# discriminator is the SOURCE, which is why every rule here filters release workloads out rather
+# than alerting on registries. Socket: "publishing a package can look indistinguishable from normal
+# release activity."
+#
+# VISIBILITY. Method and path exist only where the proxy terminates TLS (an inspecting forward
+# proxy, or an egress gateway that logs requests). Without inspection a proxy sees a CONNECT to
+# rubygems.org, which an install also produces. The Suricata file covers the SNI-only case for the
+# one registry whose upload host is separate (upload.pypi.org).
+#
+# ENDPOINTS, from each registry's own documented publish API:
+#   RubyGems   POST /api/v1/gems (gem push), POST /api/v1/web_hooks (webhook registration)
+#   PyPI       POST to upload.pypi.org (/legacy/, the upload API twine uses)
+#   npm        PUT to registry.npmjs.org (npm publish and other package-document writes)
+#   crates.io  PUT /api/v1/crates/new (cargo publish)
+# The RubyGems patterns tolerate repeated slashes: JFrog records the payload trying "several
+# spellings of the upload path" such as /api/v1//gems and //api/v1/gems. Those variants are shown
+# as probing; JFrog says they "do not establish that any normalization bypass worked".
+#
+# ATT&CK mapping (inferred, ATT&CK v19): Exfiltration Over Web Service (T1567); Web Service (T1102)
+# for registry-as-storage.
+#
+# Ref: https://socket.dev/blog/gemstuffer
+# Ref: https://research.jfrog.com/post/gemstuffer-openai-rubygems/
+# Ref: https://rubyhack.ai/
+# Author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team, 2026-09-27
+
+title: Package Registry Publish From A Workload That Is Not A Release Pipeline
+id: f2f12c97-c774-4192-953f-0b52b8b4138e
+status: experimental
+description: |
+  A proxied request published a package (RubyGems push, PyPI upload, npm PUT, crates.io publish)
+  from a source that is not a release pipeline. From an agent, evaluation or sandbox workload a
+  publish is an exit: the package is public the moment the registry accepts it.
+
+  ALERT from agent, evaluation and sandbox ranges. In CI, alert on every job that is not a tagged
+  release job. The release-pipeline range below is a PLACEHOLDER.
+
+  ATT&CK mapping (inferred): T1567, T1102.
+references:
+    - https://socket.dev/blog/gemstuffer
+    - https://research.jfrog.com/post/gemstuffer-openai-rubygems/
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-09-27
+tags:
+    - attack.exfiltration
+    - attack.t1567
+    - attack.command-and-control
+    - attack.t1102
+logsource:
+    category: proxy
+detection:
+    rubygems_push:
+        cs-host: 'rubygems.org'
+        cs-method: 'POST'
+        c-uri-stem|re: '^/+api/+v1/+gems/*$'
+    pypi_upload:
+        cs-host: 'upload.pypi.org'
+        cs-method: 'POST'
+    npm_publish:
+        cs-host: 'registry.npmjs.org'
+        cs-method: 'PUT'
+    crates_publish:
+        cs-host: 'crates.io'
+        cs-method: 'PUT'
+        c-uri-stem|re: '^/+api/+v1/+crates/+new/*$'
+    release_pipelines:
+        c-ip|cidr: '192.0.2.0/28'   # PLACEHOLDER: your release runners, and nothing else
+    condition: (rubygems_push or pypi_upload or npm_publish or crates_publish) and not release_pipelines
+falsepositives:
+    - Maintainers publishing by hand from a workstation. That is a policy question (trusted
+      publishing exists for all four registries); scope the rule to non-human workloads first.
+    - Release jobs running on shared runners whose range cannot be separated. Filter on the job
+      identity your proxy logs instead, if it logs one.
+    - Private registries on the same hostnames through a mirror. Rare; check the proxy's upstream.
+level: high
+---
+title: RubyGems Webhook Registration From A Workload That Is Not A Release Pipeline
+id: 18926c89-a41b-48eb-914d-bef6dac0b78e
+status: experimental
+description: |
+  A proxied POST to the RubyGems web_hooks API from a source that is not a release pipeline.
+  Webhook registration is account configuration, rarely automated, and never needed by an agent
+  task. rubyhack.ai and JFrog both describe webhook URLs used as a data store in this campaign;
+  JFrog notes "nothing in this sample points to a real C2".
+
+  ALERT from any non-release source. Almost nothing legitimate does this outside a person
+  configuring an account once.
+
+  ATT&CK mapping (inferred): T1102, T1567.
+references:
+    - https://rubyhack.ai/
+    - https://research.jfrog.com/post/gemstuffer-openai-rubygems/
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-09-27
+tags:
+    - attack.command-and-control
+    - attack.t1102
+    - attack.exfiltration
+    - attack.t1567
+logsource:
+    category: proxy
+detection:
+    webhook_api:
+        cs-host: 'rubygems.org'
+        cs-method: 'POST'
+        c-uri-stem|re: '^/+api/+v1/+web_hooks'
+    release_pipelines:
+        c-ip|cidr: '192.0.2.0/28'   # PLACEHOLDER
+    condition: webhook_api and not release_pipelines
+falsepositives:
+    - A maintainer or an ops script registering a notification hook for a gem the organisation
+      owns. Verify the gem name against your published gems.
+level: high
+---
+title: Burst Of Package Publishes From One Non-Release Source
+id: b37133f1-c448-41f8-92fe-a352c59d9a9d
+status: experimental
+description: |
+  Ten or more publishes from one non-release source within an hour. JFrog's upload windows put
+  2,359 packages in under seven hours on 12 May 2026 and 295 on 11 May; a single release
+  pipeline rarely publishes more than a handful of packages an hour. Ten an hour is a starting
+  point, not a measurement of any one source (the published counts are campaign-wide).
+
+  ATT&CK mapping (inferred): T1567.
+references:
+    - https://research.jfrog.com/post/gemstuffer-openai-rubygems/
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-09-27
+tags:
+    - attack.exfiltration
+    - attack.t1567
+correlation:
+    type: event_count
+    rules:
+        - f2f12c97-c774-4192-953f-0b52b8b4138e
+    group-by:
+        - c-ip
+    timespan: 1h
+    condition:
+        gte: 10
+falsepositives:
+    - A monorepo release that publishes many packages at once from a runner outside the release
+      range. Put it in the range.
+level: critical

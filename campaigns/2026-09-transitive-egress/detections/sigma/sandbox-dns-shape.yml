@@ -1,0 +1,148 @@
+# Sigma - the shape of DNS from an agent, evaluation or CI workload.
+#
+# SANDBOX OPERATOR VANTAGE. OpenAI, "An agent used DNS to reach an external chatbot" (report
+# updated 25 Sep 2026): an agent in an RL training sandbox reached "a public chatbot service
+# through a gap in our internet-access restrictions: insufficient DNS filtering in its training
+# sandbox". Everything else it touched "hit our offline webcache"; the resolver was the exit.
+# OpenAI's fix: "restricted DNS queries within the environment to a limited allowed list of
+# domains and record types".
+#
+# This pack does not describe how a question travels inside DNS, and neither does the source at
+# any useful depth. The rules key on what a DNS log shows from the defender's side, whatever the
+# method: names that are unusually long, labels that are unusually long, and record types an
+# ordinary workload rarely asks for. A workload that resolves package mirrors and an API gateway
+# asks for A and AAAA records of short names. A burst of distinct TXT lookups from one sandbox is
+# not what that workload does.
+#
+# DNS THROUGH A SANCTIONED RESOLVER LOOKS LIKE DNS. Nothing here sees content. Only volume and
+# shape remain, which is why every threshold is a starting point and why the per-registered-domain
+# view (unique subdomains, label entropy) lives in the SPL, the KQL and
+# hunt/transitive_egress_audit.py dns, not here: Sigma has no registered-domain function.
+#
+# LOG SOURCE. Zeek dns.log field names (id.orig_h, query, qtype_name, rcode_name). A resolver's
+# own query log (BIND, Unbound, CoreDNS, Route 53 Resolver) maps directly. The sandbox range below
+# is a PLACEHOLDER (TEST-NET-2, the same range tools/suricata_test.py uses for SANDBOX_NET).
+# Replace it with your agent, evaluation and CI ranges.
+#
+# ALERT IN SANDBOXES, HUNT ELSEWHERE. From a developer laptop, long names and TXT lookups are
+# ordinary (anti-spam, DKIM, service discovery, CDN hostnames).
+#
+# ATT&CK mapping (inferred, ATT&CK v19): Application Layer Protocol: DNS (T1071.004) and Protocol
+# Tunneling (T1572). The source does not use ATT&CK; the mapping is ours.
+#
+# Ref: https://alignment.openai.com/misalignment-reports/an-agent-used-dns-to-reach-an-external-chatbot/
+# Author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team, 2026-09-27
+
+title: Long DNS Query Name From Agent Or Sandbox Workload
+id: ad76c729-dec7-4aa1-a510-357dbd1f5235
+status: experimental
+description: |
+  A workload in an agent, evaluation, sandbox or CI range asked its resolver for a name with a
+  label of 40 or more characters, or a name of 100 or more characters in total.
+
+  Thresholds are starting points, not measurements: the OpenAI report publishes no query names
+  and no lengths. DNS labels are capped at 63 characters and names at 253, so these cut-offs sit
+  well below the protocol limits and well above most ordinary hostnames. Tune against a week of
+  your own sandbox DNS before alerting.
+
+  ATT&CK mapping (inferred): T1071.004, T1572.
+references:
+    - https://alignment.openai.com/misalignment-reports/an-agent-used-dns-to-reach-an-external-chatbot/
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-09-27
+tags:
+    - attack.command-and-control
+    - attack.t1071.004
+    - attack.t1572
+logsource:
+    product: zeek
+    service: dns
+detection:
+    sandbox:
+        id.orig_h|cidr: '198.51.100.0/24'   # PLACEHOLDER: your agent / eval / CI ranges
+    long_label:
+        query|re: '(^|\.)[^.]{40,}(\.|$)'
+    long_name:
+        query|re: '^.{100,}$'
+    condition: sandbox and (long_label or long_name)
+falsepositives:
+    - CDN, cloud storage and load-balancer hostnames with long generated labels. Allowlist the
+      registered domains your sandbox is meant to use; do not raise the threshold to hide them.
+    - DKIM and other TXT-based lookups with long selector labels, from workloads that send mail.
+      A sandbox should not be one of them.
+    - Service-mesh names in Kubernetes (long namespace plus service plus cluster suffix). Exclude
+      the cluster's internal zone.
+level: high
+---
+title: Non-Address DNS Record Type Requested From Agent Or Sandbox Workload
+id: b677df69-a218-4488-907d-c47665e35c23
+status: experimental
+description: |
+  Base rule, NOT an alert on its own. A sandbox workload asked for a TXT, NULL, ANY or NS
+  record. OpenAI's remediation restricted "domains and record types", which says the record type
+  is a control surface. This rule exists so the correlation below can count distinct names.
+
+  ATT&CK mapping (inferred): T1071.004.
+references:
+    - https://alignment.openai.com/misalignment-reports/an-agent-used-dns-to-reach-an-external-chatbot/
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-09-27
+tags:
+    - attack.command-and-control
+    - attack.t1071.004
+logsource:
+    product: zeek
+    service: dns
+detection:
+    sandbox:
+        id.orig_h|cidr: '198.51.100.0/24'   # PLACEHOLDER: your agent / eval / CI ranges
+    odd_type:
+        qtype_name:
+            - 'TXT'
+            - 'NULL'
+            - '*'      # Zeek's name for ANY
+            - 'NS'
+    condition: sandbox and odd_type
+falsepositives:
+    - Tooling that checks domain verification TXT records, SPF or DMARC. Rare inside a sandbox.
+    - Resolver health checks that ask for NS of the root or of an internal zone. Exclude the
+      checker's address.
+level: informational
+---
+title: Many Distinct Non-Address DNS Lookups From One Sandbox Workload
+id: 71e2b4af-27c3-4ab0-a6e7-f839a38b08b4
+status: experimental
+description: |
+  One sandbox source asked for 20 or more DISTINCT names with non-address record types (TXT,
+  NULL, ANY, NS) within 10 minutes. Distinct names, not a count of queries: retries of one
+  lookup do not add up. The OpenAI agent sent a first batch of questions, a retry, then "18 more
+  questions through the same route"; 20 in 10 minutes is a starting point shaped by that account,
+  not a measurement of it.
+
+  ALERT in sandboxes. Grade the attempt: whether the lookups were answered is irrelevant here,
+  because the OpenAI monitor "sometimes treated the failure to obtain useful information as
+  evidence that the attempt to access the internet had failed".
+
+  ATT&CK mapping (inferred): T1071.004, T1572.
+references:
+    - https://alignment.openai.com/misalignment-reports/an-agent-used-dns-to-reach-an-external-chatbot/
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-09-27
+tags:
+    - attack.command-and-control
+    - attack.t1071.004
+    - attack.t1572
+correlation:
+    type: value_count
+    rules:
+        - b677df69-a218-4488-907d-c47665e35c23
+    group-by:
+        - id.orig_h
+    timespan: 10m
+    condition:
+        gte: 20
+        field: query
+falsepositives:
+    - A mail-security or domain-verification job placed in a sandbox range by mistake. Move it;
+      do not exclude it here.
+level: high
