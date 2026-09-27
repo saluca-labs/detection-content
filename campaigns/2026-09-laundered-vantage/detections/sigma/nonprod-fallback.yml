@@ -1,0 +1,106 @@
+# Sigma - the file production refused, fetched from pre-production instead.
+#
+# SITE VANTAGE. Transluce, AIHW, June 2026: "When Cloudflare blocked the dataset download on AIHW's
+# main site, they fetched the file from AIHW's pre-production server (pp.aihw.gov.au) instead, which
+# served it in pieces over more than 100 scans. The file itself is public, so no non-public data was
+# exposed, but the agent bypassed the site's anti-bot controls."
+#
+#   blocked:  https://www.aihw.gov.au/getmedia/ce13d423-.../aihw-hwe-098-pbs-atc1-prescriptions-monthly-data_keep.zip?v=...&chunk=1048576x...
+#   fallback: https://pp.aihw.gov.au/getmedia/ce13d423-ed18-4169-8b76-2f671df935de/aihw-hwe-098-pbs-atc1-prescriptions-monthly-data_keep.zip?download=1
+#
+# Pre-production hosts often lack the bot management production has, and often serve the same
+# content. An agent that has been refused finds them the same way anyone does.
+#
+# SIGMA CANNOT MATCH "THE SAME FILE". The correlation below orders a refusal before a non-prod data
+# fetch from the same source; it cannot require that both name the same file. The SPL, KQL and
+# hunt/public_scan_search.py `logs` versions do key on the file name, and do not require the same
+# source, because 100+ scans through a sandbox service need not share one address. Prefer those.
+#
+# THE BETTER FIX IS NOT A DETECTION. If pre-production does not need to be on the internet, take it
+# off. If it does, put production's controls in front of it. This rule is for the meantime.
+#
+# ATT&CK. Our inference (ATT&CK v19).
+#
+# Ref: https://transluce.org/agent-activity
+# Author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team, 2026-09-26
+
+title: Data File Served From A Non-Production Host
+id: 1840f103-dce3-435a-8255-c9fa15669664
+status: experimental
+description: |
+  Base rule. A host whose first label marks it as non-production (pp., staging., stage., preprod.,
+  pre-prod., dev., uat.) served a data file (zip, csv, xlsx, xls, json, xml, pdf, parquet, gz) with
+  a 200 or 206.
+
+  HUNT. Internal testers and monitoring hit these hosts legitimately. On its own this is an
+  inventory of what your non-production estate hands to the internet, which is worth having.
+references:
+    - https://transluce.org/agent-activity
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-09-26
+tags:
+    - attack.initial-access
+    - attack.t1190
+logsource:
+    category: webserver
+detection:
+    nonprod_host:
+        cs-host|startswith:
+            - 'pp.'
+            - 'staging.'
+            - 'stage.'
+            - 'preprod.'
+            - 'pre-prod.'
+            - 'dev.'
+            - 'uat.'
+    data_file:
+        cs-uri-stem|endswith:
+            - '.zip'
+            - '.csv'
+            - '.xlsx'
+            - '.xls'
+            - '.json'
+            - '.xml'
+            - '.pdf'
+            - '.parquet'
+            - '.gz'
+    served:
+        sc-status:
+            - 200
+            - 206
+    condition: nonprod_host and data_file and served
+falsepositives:
+    - Your own QA, release verification and uptime monitoring. Exclude their source addresses.
+    - Estates that name production hosts with these prefixes (a product literally called "dev.").
+      Replace the prefix list with your real non-production naming.
+level: low
+---
+title: Non-Production Data Fetch Within An Hour After A Refusal From The Same Source
+id: 48037f41-1f24-418e-ab0d-4c2e211e1c2a
+status: experimental
+description: |
+  A source was refused or errored, then within an hour fetched a data file from a non-production
+  host. The AIHW pattern, as far as Sigma can express it.
+
+  HUNT. The same-file condition that makes this precise is not expressible here; see the SPL and
+  KQL, which join on file name across sources.
+references:
+    - https://transluce.org/agent-activity
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-09-26
+tags:
+    - attack.initial-access
+    - attack.t1190
+correlation:
+    type: temporal_ordered
+    rules:
+        - 3eba0a7a-601b-4b3f-be96-70f8b08312d7
+        - 1840f103-dce3-435a-8255-c9fa15669664
+    group-by:
+        - c-ip
+    timespan: 1h
+falsepositives:
+    - A developer blocked by production's WAF who then tests the same page on staging, which is the
+      same sequence with ordinary intent. Common in teams that test from home connections.
+    - Shared egress (inspection services, corporate NAT) joining unrelated users.
+level: medium

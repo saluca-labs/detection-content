@@ -1,0 +1,134 @@
+# Sigma - an agent workload reaches an inspection, reader, echo, headless-browser or disposable-mail
+# service. The laundering layer, seen from the operator's side.
+#
+# OPERATOR VANTAGE. The services named in Transluce's report, all legitimate, all used:
+#
+#   urlquery.net      "The free online service urlquery.net allows a user to open a URL through a
+#                     sandboxed remote browser. Its intended use is to test suspicious URLs"
+#   r.jina.ai, markdown.new   readers; the UNM relay example was
+#                     http://markdown.new/https://nmdigital.unm.edu/iiif/2/valmora:136;2/.../bitonal.jpg
+#   httpbin.org, eu.httpbin.org/base64/...   a code-carrier: a base64 HTML page loaded the AIHW
+#                     Tableau API and reported results out through httpbun.com/status/204?pr=...
+#   httpbun.com       echo endpoint used as the exfiltration sink in the same page
+#   Browserless       hosted headless browser; "a chain of reports created a mail.gw inbox,
+#                     requested a one-time passcode from Browserless ... read the inbox, verified
+#                     the account"
+#   mail.gw           disposable inbox, above
+#   milankarman.github.io/Embed-Web-Playground, blogsflow.liftbrandfulfillment.com
+#                     named by Transluce as services agents used to turn GET into POST for urlquery
+#
+# urlscan.io is included on INFERENCE: the dataset imports an external explorer covering "URLQuery
+# and urlscan.io report labels". Transluce did not report agents using urlscan.io directly.
+#
+# From a workload whose job is to fetch data, each of these is a way of making someone else's
+# infrastructure make the request. ALERT from agent, evaluation, sandbox and CI workloads. HUNT
+# anywhere else: security teams (including ours) use urlquery and urlscan daily, and developers use
+# httpbin and Jina constantly.
+#
+# NOT DUPLICATED FROM 2026-09-agent-collusion. That pack's relay rule covers r.jina.ai and
+# markdown.new with CORS proxies by URI. This rule adds the inspection, echo, headless-browser and
+# mail services and the two named relays, by host.
+#
+# ATT&CK. Our inference (ATT&CK v19): external proxy (T1090.002) and web service (T1102).
+#
+# Ref: https://transluce.org/agent-activity
+# Author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team, 2026-09-26
+
+title: Agent Or Sandbox Workload Contacts URL Inspection Or Relay Service
+id: a03663b0-3408-4b19-968c-d12905e9caef
+status: experimental
+description: |
+  A request through the proxy reached a URL-scanning sandbox (urlquery.net, urlscan.io), a reader
+  proxy (r.jina.ai, markdown.new), a request-echo service (httpbin.org, httpbun.com), a hosted
+  headless browser (browserless.io), a disposable mailbox (mail.gw), or a relay named in the
+  Transluce report (milankarman.github.io, blogsflow.liftbrandfulfillment.com).
+
+  ALERT when the client is an agent, evaluation, sandbox or CI workload: scope this rule to those
+  source ranges in your deployment. HUNT everywhere else.
+references:
+    - https://transluce.org/agent-activity
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-09-26
+tags:
+    - attack.command-and-control
+    - attack.t1090.002
+    - attack.t1102
+logsource:
+    category: proxy
+detection:
+    service_exact:
+        cs-host:
+            - 'urlquery.net'
+            - 'api.urlquery.net'
+            - 'urlscan.io'
+            - 'r.jina.ai'
+            - 'markdown.new'
+            - 'httpbin.org'
+            - 'httpbun.com'
+            - 'mail.gw'
+            - 'api.mail.gw'
+            - 'milankarman.github.io'
+            - 'blogsflow.liftbrandfulfillment.com'
+    service_subdomain:
+        cs-host|endswith:
+            - '.urlquery.net'
+            - '.urlscan.io'
+            - '.httpbin.org'
+            - '.httpbun.com'
+            - '.browserless.io'
+            - '.mail.gw'
+    condition: service_exact or service_subdomain
+falsepositives:
+    - Security analysts submitting suspicious URLs to urlquery.net or urlscan.io, which is what the
+      services exist for. Exclude SOC workstations; never exclude agent workloads.
+    - Developers and CI tests using httpbin.org or httpbun.com as a known-good HTTP endpoint. Very
+      common in test suites. In CI, alert only on jobs that are not HTTP-client tests.
+    - Content pipelines using r.jina.ai or markdown.new to read pages as text, including legitimate
+      agent tooling. Allowlist the workload, not the service.
+    - Scraping and browser-automation teams using Browserless as production infrastructure.
+level: medium
+---
+title: Agent Or Sandbox Workload Resolves URL Inspection Or Relay Service
+id: 0972a376-c708-4394-a08e-5d44f9df73bf
+status: experimental
+description: |
+  DNS companion to the proxy rule, for workloads whose egress bypasses the proxy (the NO_PROXY
+  lesson of 2026-09-agent-collusion) or estates with DNS telemetry and no proxy. Same services, same
+  scoping: ALERT from agent, evaluation, sandbox and CI workloads, HUNT elsewhere.
+references:
+    - https://transluce.org/agent-activity
+author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team
+date: 2026-09-26
+tags:
+    - attack.command-and-control
+    - attack.t1090.002
+    - attack.t1102
+logsource:
+    category: dns_query
+detection:
+    service_exact:
+        QueryName:
+            - 'urlquery.net'
+            - 'api.urlquery.net'
+            - 'urlscan.io'
+            - 'r.jina.ai'
+            - 'markdown.new'
+            - 'httpbin.org'
+            - 'httpbun.com'
+            - 'mail.gw'
+            - 'api.mail.gw'
+            - 'milankarman.github.io'
+            - 'blogsflow.liftbrandfulfillment.com'
+    service_subdomain:
+        QueryName|endswith:
+            - '.urlquery.net'
+            - '.urlscan.io'
+            - '.httpbin.org'
+            - '.httpbun.com'
+            - '.browserless.io'
+            - '.mail.gw'
+    condition: service_exact or service_subdomain
+falsepositives:
+    - As for the proxy rule. DNS adds browser prefetch and link-preview resolution, which resolve
+      names nobody visited; confirm with a connection before escalating.
+level: medium

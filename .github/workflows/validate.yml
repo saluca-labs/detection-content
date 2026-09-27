@@ -35,6 +35,12 @@ jobs:
         with:
           python-version: '3.12'
       - run: python -m unittest hunt/tests/test_rsa_oracle_audit.py -v
+      # public_scan_search.py (2026-09-laundered-vantage): unit tests against Transluce's exact
+      # probe URLs, a recorded urlscan response and synthetic access logs, then the mutation harness,
+      # which reruns the suite against deliberately broken copies and fails if any mutant survives.
+      # No network: the one live smoke test is skipped unless LV_LIVE=1.
+      - run: python -m unittest hunt/tests/test_public_scan_search.py -v
+      - run: python hunt/tests/public_scan_search_mutants.py
       - run: docker pull semgrep/semgrep:1.177.0
       - run: python hunt/tests/semgrep_test.py
       - run: python hunt/tests/pkcs11_softhsm_test.py

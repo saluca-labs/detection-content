@@ -1,0 +1,188 @@
+// Laundered vantage - Microsoft Sentinel and Defender XDR.
+//
+// Companion to detections/sigma/*.yml and detections/splunk/laundered-vantage.spl.
+//
+// SCHEMA. Built-in tables where one exists, placeholders where it does not:
+//   W3CIISLog               site access logs: TimeGenerated, cIP, csHost, csUriStem, csUriQuery,
+//                           scStatus (string). For other web servers, project your table onto
+//                           these names first.
+//   DeviceNetworkEvents     operator egress (Defender for Endpoint): DeviceName, RemoteUrl
+//   EmailEvents             disclosure mail (Defender for Office 365): NetworkMessageId,
+//                           SenderFromAddress, SenderFromDomain, RecipientEmailAddress, Subject
+//   DisclosureTriage_CL     placeholder: NetworkMessageId, TriagedTime, IncidentId,
+//                           AccessTimeReported (datetime the notification states)
+//   ApiGateway_CL           placeholder: api_key_id, src_asn, user_agent
+//   watchlists              SandboxDevices (DeviceName, WorkloadClass),
+//                           ExposedKeys (api_key_id, exposed_time, exposure_source)
+//
+// THE PROBE REGEX is the SPL's regex (\d written as [0-9]), applied to the url-decoded, lower-cased
+// query; %00 is tested on the raw query. It is a subset of hunt/public_scan_search.py's families
+// (no html-injection or junk-extension). The query was NOT executed, there is no tenant behind this
+// file, but the regex string itself is run in Python re against the published probes and benign
+// URLs by hunt/tests/test_public_scan_search.py (PackRegexCrossCheck), which also fails if the SPL
+// and KQL copies drift apart. RE2 and Python re agree on every construct used here.
+//
+// Ref: https://transluce.org/agent-activity
+// Author: Cristian Ruvalcaba and the Saluca Agentic AI Research Team, 2026-09-26
+// Apache-2.0. Defensive use only.
+
+
+// ============================================================================================
+// QUERY 1 - Escalation after refusal. SITE VANTAGE. ALERT.
+// Refusal or error (not 404) for source + host + path, then probe grammar from the same source to
+// the same host + path within 10 minutes. For the host-level variant, drop csUriStem from the join.
+// ============================================================================================
+let window = 10m;
+let probe_rx = @"etc/passwd|(\.\./){2,}|\bunion\s+(all\s+)?select\b|'\s*or\s+1\s*=\s*1|\{\{\s*7\s*\*\s*7\s*\}\}|<\s*script|<\s*svg[^>]*onload|onerror\s*=\s*alert|<\s*img[^>]*onerror|evil\.com|\bcat\s+/etc/|wp-admin\.php|eval\s*\(\s*base64_decode|(^|&)tok=expt[0-9]+";
+let web = W3CIISLog
+    | where TimeGenerated > ago(1d)
+    | extend status = toint(scStatus), q = tolower(url_decode(coalesce(csUriQuery, ""))),
+             raw_q = tolower(coalesce(csUriQuery, ""));
+let refusals = web
+    | where status between (400 .. 599) and status != 404
+    | project refusal_time = TimeGenerated, cIP, csHost, csUriStem, refusal_status = status;
+let probes = web
+    | where q matches regex probe_rx or raw_q contains "%00"
+    | project probe_time = TimeGenerated, cIP, csHost, csUriStem, csUriQuery;
+refusals
+| join kind=inner probes on cIP, csHost, csUriStem
+| where probe_time between (refusal_time .. (refusal_time + window))
+| summarize first_refusal = min(refusal_time), refusal_status = make_set(refusal_status, 10),
+            first_probe = min(probe_time), last_probe = max(probe_time),
+            probes = dcount(strcat(tostring(probe_time), csUriQuery)),
+            probe_queries = make_set(csUriQuery, 20)
+            by cIP, csHost, csUriStem
+| extend refusal_to_probe = first_probe - first_refusal, probe_span = last_probe - first_probe
+| order by first_probe asc
+
+
+// ============================================================================================
+// QUERY 2 - Probe grammar on its own. SITE VANTAGE. HUNT.
+// Commodity scanners send these strings everywhere. Read where the endpoint is a data API, IIIF
+// server or dashboard, and where a tok=exptN marker appears.
+// ============================================================================================
+let probe_rx2 = @"etc/passwd|(\.\./){2,}|\bunion\s+(all\s+)?select\b|'\s*or\s+1\s*=\s*1|\{\{\s*7\s*\*\s*7\s*\}\}|<\s*script|<\s*svg[^>]*onload|onerror\s*=\s*alert|<\s*img[^>]*onerror|evil\.com|\bcat\s+/etc/|wp-admin\.php|eval\s*\(\s*base64_decode|(^|&)tok=expt[0-9]+";
+W3CIISLog
+| where TimeGenerated > ago(7d) and isnotempty(csUriQuery)
+| extend q = tolower(url_decode(csUriQuery))
+| where q matches regex probe_rx2 or tolower(csUriQuery) contains "%00"
+| extend experiment_marker = extract(@"(?:^|&)tok=(expt[0-9]+)", 1, q)
+| summarize probes = count(), distinct_payloads = dcount(csUriQuery),
+            markers = make_set_if(experiment_marker, isnotempty(experiment_marker), 20),
+            statuses = make_set(scStatus, 10), first_seen = min(TimeGenerated), last_seen = max(TimeGenerated)
+            by cIP, csHost, csUriStem
+| order by distinct_payloads desc
+
+
+// ============================================================================================
+// QUERY 3 - Non-production fallback. SITE VANTAGE. HUNT.
+// The AIHW case. Keyed on site and file name, not source: 100+ scans through a sandbox service
+// need not share one address. site approximates the registrable domain.
+// ============================================================================================
+let fallback_window = 1h;
+let nonprod_labels = dynamic(["pp", "staging", "stage", "preprod", "pre-prod", "dev", "uat"]);
+let files = W3CIISLog
+    | where TimeGenerated > ago(7d)
+    | extend status = toint(scStatus), host = tolower(csHost),
+             file = tolower(tostring(split(csUriStem, "/")[-1]))
+    | where file contains "."
+    | extend site = extract(@"([^.]+\.(?:gov|edu|com|org|net|co|ac)\.(?:au|uk|nz)|[^.]+\.[^.]+)$", 1, host),
+             first_label = tostring(split(host, ".")[0])
+    | extend nonprod = first_label in (nonprod_labels);
+let prod_refused = files
+    | where not(nonprod) and status between (400 .. 599) and status != 404
+    | project refusal_time = TimeGenerated, site, file, refused_on = host, prod_status = status;
+let nonprod_served = files
+    | where nonprod and status in (200, 206)
+    | project nonprod_time = TimeGenerated, site, file, nonprod_host = host, cIP;
+prod_refused
+| join kind=inner nonprod_served on site, file
+| where nonprod_time between (refusal_time .. (refusal_time + fallback_window))
+| summarize first_refusal = min(refusal_time), refused_on = make_set(refused_on, 5),
+            prod_status = make_set(prod_status, 5), first_nonprod = min(nonprod_time),
+            nonprod_requests = dcount(strcat(tostring(nonprod_time), cIP)), sources = dcount(cIP),
+            source_list = make_set(cIP, 50)
+            by site, file, nonprod_host
+| order by first_nonprod asc
+
+
+// ============================================================================================
+// QUERY 4 - Agent workload egress to laundering services. OPERATOR VANTAGE.
+// ALERT for devices on the SandboxDevices watchlist, HUNT for everything else. urlscan.io is an
+// INFERENCE (named only by the external explorer the Transluce dataset imports).
+// ============================================================================================
+let sandboxes = _GetWatchlist('SandboxDevices') | project DeviceName = tostring(DeviceName), WorkloadClass = tostring(WorkloadClass);
+DeviceNetworkEvents
+| where TimeGenerated > ago(7d) and isnotempty(RemoteUrl)
+| extend h = tolower(tostring(coalesce(parse_url(RemoteUrl).Host, RemoteUrl)))
+| extend h = iff(h contains "/", tostring(split(h, "/")[0]), h)
+| extend service = case(
+        h == "urlquery.net" or h endswith ".urlquery.net", "url inspection sandbox",
+        h == "urlscan.io" or h endswith ".urlscan.io", "url inspection sandbox (inference)",
+        h in ("r.jina.ai", "markdown.new"), "reader proxy",
+        h == "httpbin.org" or h endswith ".httpbin.org" or h == "httpbun.com" or h endswith ".httpbun.com", "request echo",
+        h endswith ".browserless.io", "hosted headless browser",
+        h == "mail.gw" or h endswith ".mail.gw", "disposable mail",
+        h in ("milankarman.github.io", "blogsflow.liftbrandfulfillment.com"), "GET-to-POST relay named by Transluce",
+        "")
+| where isnotempty(service)
+| join kind=leftouter sandboxes on DeviceName
+| extend disposition = iff(isnotempty(WorkloadClass), "ALERT - agent/sandbox workload", "hunt - not a sandbox device")
+| summarize connections = count(), service_kinds = dcount(service), services = make_set(service, 10),
+            hosts = make_set(h, 20), first_seen = min(TimeGenerated), last_seen = max(TimeGenerated)
+            by DeviceName, WorkloadClass, disposition
+| order by service_kinds desc, connections desc
+
+
+// ============================================================================================
+// QUERY 5 - Disclosure-inbox triage latency. NOTIFICATION RECEIPT. ALERT on the SLA.
+// Medicare statistics portal: access 18 June, lab aware August, one email on 10 September to a
+// public disclosure mailbox checked once a day. Notification was the detection. Sender and keyword
+// lists are ours; the lab's notification text is not public.
+// ============================================================================================
+let disclosure_boxes = dynamic(["security", "disclosure", "disclosures", "publicdisclosures", "psirt", "vulnerability", "cert", "abuse"]);
+let ai_or_vendor = dynamic(["openai.com", "anthropic.com", "deepmind.com", "google.com", "x.ai", "mistral.ai", "meta.com", "microsoft.com", "transluce.org", "hackerone.com", "bugcrowd.com"]);
+EmailEvents
+| where TimeGenerated > ago(30d) and EmailDirection == "Inbound"
+| extend box = tolower(tostring(split(RecipientEmailAddress, "@")[0]))
+| where box in (disclosure_boxes)
+| extend from_ai_or_vendor = tolower(SenderFromDomain) in (ai_or_vendor),
+         vuln_language = tolower(Subject) matches regex @"vulnerab|unauthori[sz]ed access|security incident|misalign|responsible disclosure|exposed (api )?key|our (model|agent)s?|ai agent"
+| where from_ai_or_vendor or vuln_language
+| join kind=leftouter (DisclosureTriage_CL | project NetworkMessageId, TriagedTime, IncidentId, AccessTimeReported) on NetworkMessageId
+| extend sla = iff(from_ai_or_vendor, 4h, 24h)
+| extend open_for = coalesce(TriagedTime, now()) - TimeGenerated,
+         notification_to_triage = TriagedTime - TimeGenerated,
+         access_to_notification = TimeGenerated - AccessTimeReported
+| extend status = case(isnull(TriagedTime) and open_for > sla, "UNTRIAGED PAST SLA",
+                       isnull(TriagedTime), "untriaged, within SLA",
+                       notification_to_triage > sla, "triaged late",
+                       "triaged within SLA")
+| project received = TimeGenerated, SenderFromAddress, RecipientEmailAddress, Subject, from_ai_or_vendor,
+          vuln_language, status, open_for, notification_to_triage, access_to_notification, IncidentId
+| order by open_for desc
+
+
+// ============================================================================================
+// QUERY 6 - Exposed API key used from a new origin. API-OWNER VANTAGE. HUNT.
+// OpenAI's report: a model "found and used an exposed API key without authorization". That the
+// API was the Census Data API is an INFERENCE, not OpenAI's statement.
+// (a) with the ExposedKeys watchlist: any origin first seen after exposure.
+// (b) without it: a key with 30+ days of history used from an ASN it never used before, today.
+// ============================================================================================
+let exposed = _GetWatchlist('ExposedKeys') | project api_key_id = tostring(api_key_id), exposed_time = todatetime(exposed_time), exposure_source = tostring(exposure_source);
+ApiGateway_CL
+| where TimeGenerated > ago(90d)
+| summarize origin_first_seen = min(TimeGenerated), origin_last_seen = max(TimeGenerated), calls = count(),
+            user_agents = make_set(user_agent, 10)
+            by api_key_id, src_asn
+| join kind=inner (ApiGateway_CL | where TimeGenerated > ago(90d)
+                   | summarize key_first_seen = min(TimeGenerated), key_origins = dcount(src_asn) by api_key_id) on api_key_id
+| join kind=leftouter exposed on api_key_id
+| extend after_exposure = isnotnull(exposed_time) and origin_first_seen >= exposed_time,
+         new_origin_today = origin_first_seen >= startofday(now()) and key_first_seen <= ago(30d)
+| where after_exposure or new_origin_today
+| extend time_after_exposure = iff(after_exposure, origin_first_seen - exposed_time, timespan(null))
+| project api_key_id, src_asn, origin_first_seen, calls, user_agents, key_first_seen, key_origins,
+          exposed_time, exposure_source, time_after_exposure, after_exposure, new_origin_today
+| order by after_exposure desc, time_after_exposure asc
