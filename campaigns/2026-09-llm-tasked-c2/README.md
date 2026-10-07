@@ -5,9 +5,9 @@ Detection content for **malware with no command-and-control server**, which asks
 Defensive only. Apache-2.0. Part of [saluca-labs/detection-content](https://github.com/saluca-labs/detection-content).
 
 **Paper:** *The Quorum Signature: A Detection Engineering Analysis of CLOSEDQUORUM, and Why the Best Signal in LLM-Tasked Command and Control Is Scheduled to Disappear*
-Local copies: [`quorum-signature-v1.0.pdf`](quorum-signature-v1.0.pdf) - [`.md`](quorum-signature-v1.0.md)
+Local copies: v1.1 [`quorum-signature-v1.1.pdf`](quorum-signature-v1.1.pdf) - [`.md`](quorum-signature-v1.1.md); v1.0 [`quorum-signature-v1.0.pdf`](quorum-signature-v1.0.pdf) - [`.md`](quorum-signature-v1.0.md)
 [10.5281/zenodo.22903268](https://doi.org/10.5281/zenodo.22903268) - [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22903268.svg)](https://doi.org/10.5281/zenodo.22903268)
-Published 22 September 2026. That is the CONCEPT DOI and resolves to the newest revision; 10.5281/zenodo.22903269 is the version DOI and will not follow a correction.
+Published 22 September 2026. That is the CONCEPT DOI and resolves to the newest revision; 10.5281/zenodo.22903269 is the version DOI and will not follow a correction. **v1.1** (7 October 2026) is an erratum: v1.0 said *Detection Without Indicators* v1.1 "withdrew" agent narration as a detection surface, when it narrowed it. The note at the top of the paper says what changed.
 
 ---
 
