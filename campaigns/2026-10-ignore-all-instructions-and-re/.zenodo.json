@@ -1,0 +1,47 @@
+{
+  "title": "AI-Analysis Evasion in Malware: A Detection Engineering Analysis of Plaintext Instructions Embedded to Manipulate Automated Triage",
+  "upload_type": "publication",
+  "publication_type": "report",
+  "description": "<p>Cisco Talos published original findings from the CAIRN project on 8 October 2026 documenting a class of malware they classify as A3, or AI-Analysis Evasion. These samples embed natural-language instructions inside binaries and scripts to influence automated language-model analysis pipelines. The research covers four confirmed families, FRUITSHELL, PLOTSAFE, HOLLOWCLAD and MANTLEMAZE, across 84 distinct samples collected from January 2025 through July 2026. The techniques range from simple imperative comments telling an analyser to ignore a file, to templated generation systems, to chat-template spraying across seven model formats, to fabricated government contracts and certification identifiers designed to trigger model guardrails. Talos evaluated the steering effect of these strings using a panel of five local LLMs and found the cheapest direct-instruction techniques worked almost universally, while more complex approaches often backfired by making models more suspicious. The fundamental constraint for attackers is that evasion content must always be plaintext to reach the model, giving defenders a stable detection surface. This working paper translates the published findings into detection opportunities tied to four Sigma rules, identifies what remains invisible to file-based detection, and documents limitations inherent in a source-only analysis.</p><p><strong>Working draft 0.1, machine drafted.</strong> Companion detection content is in <a href=\"https://github.com/saluca-labs/detection-content\">saluca-labs/detection-content</a> under Apache-2.0.</p>",
+  "creators": [
+    {
+      "name": "Ruvalcaba, Cristian",
+      "affiliation": "Saluca LLC"
+    },
+    {
+      "name": "Saluca Agentic AI Research Team",
+      "affiliation": "Saluca LLC"
+    }
+  ],
+  "keywords": [
+    "detection engineering",
+    "ai security",
+    "sigma rules",
+    "threat detection",
+    "blue team"
+  ],
+  "license": "cc-by-4.0",
+  "access_right": "open",
+  "version": "0.1",
+  "communities": [
+    {
+      "identifier": "saluca"
+    }
+  ],
+  "related_identifiers": [
+    {
+      "identifier": "https://blog.talosintelligence.com/ignore-all-instructions-and-read-this-blog-the-state-of-ai-analysis-evasion-in-malware/",
+      "relation": "isDerivedFrom",
+      "resource_type": "publication-report",
+      "scheme": "url"
+    },
+    {
+      "identifier": "https://github.com/saluca-labs/detection-content",
+      "relation": "isSupplementedBy",
+      "resource_type": "software",
+      "scheme": "url"
+    }
+  ],
+  "notes": "MACHINE-DRAFTED WORKING PAPER (Saluca edition_detection, on Cristian's Telegram press of the detection choice for https://blog.talosintelligence.com/ignore-all-instructions-and-read-this-blog-the-state-of-ai-analysis-evasion-in-malware/). Built from the primary source and a launcher assessment whose quotes were string-checked against it; nothing was reproduced or detonated, no rule has run against real telemetry, and Sigma rules are schema-checked only. It must be read and edited by the named human author before publication. The report text is CC-BY-4.0; the detection content and tooling are Apache-2.0 per the repository LICENSE. Prepared with AI assistance.",
+  "prereserve_doi": true
+}
