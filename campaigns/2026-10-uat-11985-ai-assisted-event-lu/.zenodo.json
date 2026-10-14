@@ -1,0 +1,47 @@
+{
+  "title": "UAT-11985: A Detection Engineering Analysis of AI-Assisted Event Lures Delivering Real-Time Google AitM Phishing",
+  "upload_type": "publication",
+  "publication_type": "report",
+  "description": "<p>Cisco Talos published a threat spotlight on 8 October 2026 documenting an advanced persistent threat spear-phishing campaign tracked as UAT-11985, targeting individuals affiliated with Taiwan research organisations. The campaign combined AI-assisted content generation, institutional impersonation, QR code phishing, and a real-time adversary-in-the-middle phishing kit impersonating Google authentication pages. The threat actor fabricated sender identities purporting to represent the Taiwan European Union Centre, the NCCU Institute of International Relations, and the Taiwan Research Institute, using legitimate public event information as cover. The phishing kit employed a dual-channel architecture using HTTP POST for credential exfiltration and WebSocket for real-time command and control, enabling the interception of credentials and multi-factor authentication challenges. Talos assessed with moderate confidence that the kit's user interface was originally developed in Simplified Chinese and later adapted for Traditional Chinese and English. This working paper translates the observable behaviours described in the source into detection opportunities mapped to four Sigma rules, identifies what remains invisible to network and email defenders, and notes the limitations of a pack built solely from a published writeup without access to underlying telemetry or live infrastructure.</p><p><strong>Working draft 0.1, machine drafted.</strong> Companion detection content is in <a href=\"https://github.com/saluca-labs/detection-content\">saluca-labs/detection-content</a> under Apache-2.0.</p>",
+  "creators": [
+    {
+      "name": "Ruvalcaba, Cristian",
+      "affiliation": "Saluca LLC"
+    },
+    {
+      "name": "Saluca Agentic AI Research Team",
+      "affiliation": "Saluca LLC"
+    }
+  ],
+  "keywords": [
+    "detection engineering",
+    "ai security",
+    "sigma rules",
+    "threat detection",
+    "blue team"
+  ],
+  "license": "cc-by-4.0",
+  "access_right": "open",
+  "version": "0.1",
+  "communities": [
+    {
+      "identifier": "saluca"
+    }
+  ],
+  "related_identifiers": [
+    {
+      "identifier": "https://blog.talosintelligence.com/uat-11985/",
+      "relation": "isDerivedFrom",
+      "resource_type": "publication-report",
+      "scheme": "url"
+    },
+    {
+      "identifier": "https://github.com/saluca-labs/detection-content",
+      "relation": "isSupplementedBy",
+      "resource_type": "software",
+      "scheme": "url"
+    }
+  ],
+  "notes": "MACHINE-DRAFTED WORKING PAPER (Saluca edition_detection, on Cristian's Telegram press of the detection choice for https://blog.talosintelligence.com/uat-11985/). Built from the primary source and a launcher assessment whose quotes were string-checked against it; nothing was reproduced or detonated, no rule has run against real telemetry, and Sigma rules are schema-checked only. It must be read and edited by the named human author before publication. The report text is CC-BY-4.0; the detection content and tooling are Apache-2.0 per the repository LICENSE. Prepared with AI assistance.",
+  "prereserve_doi": true
+}
