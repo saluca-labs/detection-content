@@ -1,0 +1,47 @@
+{
+  "title": "Visual Studio Copilot and SSMS Remote Code Execution (CVE-2026-103572): A Detection Engineering Analysis of a Trailing-Dot Path Validation Bypass",
+  "upload_type": "publication",
+  "publication_type": "report",
+  "description": "<p>CVE-2026-103572 is an Important severity Remote Code Execution vulnerability in Visual Studio Copilot, disclosed by Wunderwuzzi on the Embrace The Red blog and patched by Microsoft on 13 October 2026. The root cause is a path validation bypass in `Microsoft.VisualStudio.Copilot.Core.dll`, where a trailing dot in a filename allows the Copilot agent to circumvent protections around sensitive configuration files such as `.mcp.json` and `settings.VisualStudio.json`. By writing to these protected files, a misaligned or hijacked agent can add malicious MCP servers or overwrite the ripgrep binary path, achieving arbitrary command execution. The vulnerability affects Visual Studio 2026, SQL Server Management Studio, and older versions including Visual Studio 2022. The attack can be triggered by indirect prompt injection, and the source notes that the MAI-Code-1-Flash model has poor resilience to such injection. This working paper maps the limited detection opportunities available to defenders, all of which rely on endpoint telemetry, and identifies the classes of behaviour that remain structurally invisible to host and network monitoring.</p><p><strong>Working draft 0.1, machine drafted.</strong> Companion detection content is in <a href=\"https://github.com/saluca-labs/detection-content\">saluca-labs/detection-content</a> under Apache-2.0.</p>",
+  "creators": [
+    {
+      "name": "Ruvalcaba, Cristian",
+      "affiliation": "Saluca LLC"
+    },
+    {
+      "name": "Saluca Agentic AI Research Team",
+      "affiliation": "Saluca LLC"
+    }
+  ],
+  "keywords": [
+    "detection engineering",
+    "ai security",
+    "sigma rules",
+    "threat detection",
+    "blue team"
+  ],
+  "license": "cc-by-4.0",
+  "access_right": "open",
+  "version": "0.1",
+  "communities": [
+    {
+      "identifier": "saluca"
+    }
+  ],
+  "related_identifiers": [
+    {
+      "identifier": "https://embracethered.com/blog/posts/2026/visual-studio-copilot-remote-code-execution/",
+      "relation": "isDerivedFrom",
+      "resource_type": "publication-report",
+      "scheme": "url"
+    },
+    {
+      "identifier": "https://github.com/saluca-labs/detection-content",
+      "relation": "isSupplementedBy",
+      "resource_type": "software",
+      "scheme": "url"
+    }
+  ],
+  "notes": "MACHINE-DRAFTED WORKING PAPER (Saluca edition_detection, on Cristian's Telegram press of the detection choice for https://embracethered.com/blog/posts/2026/visual-studio-copilot-remote-code-execution/). Built from the primary source and a launcher assessment whose quotes were string-checked against it; nothing was reproduced or detonated, no rule has run against real telemetry, and Sigma rules are schema-checked only. It must be read and edited by the named human author before publication. The report text is CC-BY-4.0; the detection content and tooling are Apache-2.0 per the repository LICENSE. Prepared with AI assistance.",
+  "prereserve_doi": true
+}
