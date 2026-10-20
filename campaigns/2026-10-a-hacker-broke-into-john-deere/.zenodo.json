@@ -1,0 +1,47 @@
+{
+  "title": "AI Agents Breach 100+ Websites via Cairn Platform: A Detection Engineering Analysis of Autonomous AI-Driven Intrusions",
+  "upload_type": "publication",
+  "publication_type": "report",
+  "description": "<p>In October 2026, The Verge reported that a hacker breached more than 100 websites using an army of AI agents that mostly operated on their own, according to findings from the AI security firm Norforge. Reuters reporting indicated that victims included John Deere, SharkNinja, and Cummins, with attacks spanning companies based in the US, Canada, Australia, and Japan. The attacks were orchestrated through Cairn, an open-source AI platform that describes itself as a \"general-purpose problem-solving engine.\" Norforge uncovered the activity through exposed work on more than 20 Cairn instances deemed \"likely malicious.\" The most active attacker laid out \"preferred intrusion tactics\" using fewer than 100 Chinese characters, with successful breaches taking about 23 hours. This working paper examines what detection opportunities exist for defenders given the limited information available from this secondary news source. Two Sigma rules are proposed, one targeting outbound connections to the Cairn platform and another targeting sustained web application probing over an extended period. The paper is explicit about what cannot be detected from this source and acknowledges significant limitations in building detection logic from news coverage rather than forensic analysis.</p><p><strong>Working draft 0.1, machine drafted.</strong> Companion detection content is in <a href=\"https://github.com/saluca-labs/detection-content\">saluca-labs/detection-content</a> under Apache-2.0.</p>",
+  "creators": [
+    {
+      "name": "Ruvalcaba, Cristian",
+      "affiliation": "Saluca LLC"
+    },
+    {
+      "name": "Saluca Agentic AI Research Team",
+      "affiliation": "Saluca LLC"
+    }
+  ],
+  "keywords": [
+    "detection engineering",
+    "ai security",
+    "sigma rules",
+    "threat detection",
+    "blue team"
+  ],
+  "license": "cc-by-4.0",
+  "access_right": "open",
+  "version": "0.1",
+  "communities": [
+    {
+      "identifier": "saluca"
+    }
+  ],
+  "related_identifiers": [
+    {
+      "identifier": "https://www.theverge.com/ai-artificial-intelligence/1013643/ai-agents-hack-john-deere-shark-ninja-cummins",
+      "relation": "isDerivedFrom",
+      "resource_type": "publication-report",
+      "scheme": "url"
+    },
+    {
+      "identifier": "https://github.com/saluca-labs/detection-content",
+      "relation": "isSupplementedBy",
+      "resource_type": "software",
+      "scheme": "url"
+    }
+  ],
+  "notes": "MACHINE-DRAFTED WORKING PAPER (Saluca edition_detection, on Cristian's Telegram press of the detection choice for https://www.theverge.com/ai-artificial-intelligence/1013643/ai-agents-hack-john-deere-shark-ninja-cummins). Built from the primary source and a launcher assessment whose quotes were string-checked against it; nothing was reproduced or detonated, no rule has run against real telemetry, and Sigma rules are schema-checked only. It must be read and edited by the named human author before publication. The report text is CC-BY-4.0; the detection content and tooling are Apache-2.0 per the repository LICENSE. Prepared with AI assistance.",
+  "prereserve_doi": true
+}
