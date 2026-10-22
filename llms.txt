@@ -1,12 +1,19 @@
 # detection-content
 
-> Defensive detection engineering content from Saluca Labs: one pack per public threat campaign (Sigma, KQL, Splunk SPL, Suricata, YARA and Semgrep rules, indicator CSVs, read-only hunt scripts), each with a companion paper on Zenodo. Detection content and tooling Apache-2.0; report text CC-BY-4.0.
+> Defensive detection engineering content from Saluca Labs: one pack per public threat campaign (Sigma, KQL, Splunk SPL, Suricata, YARA and Semgrep rules, indicator CSVs, read-only hunt scripts); 8 of the 9 packs on main have a companion paper on Zenodo. Detection content and tooling Apache-2.0; report text CC-BY-4.0.
 
 Every rule ships status: experimental and none has been tuned on real telemetry. Each campaign README states what cannot be detected before what can. There is no malware, sample or payload in the repository: indicator files hold published hashes, domains and IPs with their sources, or a NOTE row saying none exist. KQL and SPL are never executed anywhere (no tenant). Sigma and YARA are checked by tools/validate.py; Suricata files are loaded in a real pinned engine by tools/suricata_test.py. Packs in open pull requests are not on main.
 
-## Docs
+If a command, script or option is not listed in this file, it does not exist in this repository. There is no package, no server and no API: the public surface is the rule files, the scripts below and their arguments.
 
-- [README](https://github.com/saluca-labs/detection-content/blob/main/README.md): campaign index, status and validation results, install, usage, citation table of concept DOIs
+## Start here
+
+- [README](https://github.com/saluca-labs/detection-content/blob/main/README.md): what it is, campaign table, validation results, How it works diagram, install, usage, citation table of concept DOIs
+- [docs/README.md](https://github.com/saluca-labs/detection-content/blob/main/docs/README.md): every document grouped by intent
+- [AGENTS.md](https://github.com/saluca-labs/detection-content/blob/main/AGENTS.md): orientation for coding agents, the only numbers to trust, setup, test, done
+
+## Campaign packs (read the pack README before deploying any rule)
+
 - [2026-08-borrowed-trust](https://github.com/saluca-labs/detection-content/tree/main/campaigns/2026-08-borrowed-trust): signed binaries loading malicious dependencies (BoryptGrab, QuickFox FDMTP, Lumma)
 - [2026-08-agentic-intrusion](https://github.com/saluca-labs/detection-content/tree/main/campaigns/2026-08-agentic-intrusion): intrusion run by orchestrated LLM agents, tempo model
 - [2026-09-agent-collusion](https://github.com/saluca-labs/detection-content/tree/main/campaigns/2026-09-agent-collusion): sandboxed agents writing to public wikis
@@ -17,15 +24,32 @@ Every rule ships status: experimental and none has been tuned on real telemetry.
 - [2026-09-laundered-vantage](https://github.com/saluca-labs/detection-content/tree/main/campaigns/2026-09-laundered-vantage): agents escalating to exploit probes via inspection services
 - [2026-09-transitive-egress](https://github.com/saluca-labs/detection-content/tree/main/campaigns/2026-09-transitive-egress): agents leaving sandboxes through allowed services
 
-## Code
+## Commands (tools/)
 
-- [tools/validate.py](https://github.com/saluca-labs/detection-content/blob/main/tools/validate.py): repository-wide Sigma, YARA, Suricata-pattern, CSV and house-style checks
-- [tools/suricata_test.py](https://github.com/saluca-labs/detection-content/blob/main/tools/suricata_test.py): loads every rule file in Suricata 7.0.17 (Docker) and fires shipped pcaps
-- [tools/new-campaign.py](https://github.com/saluca-labs/detection-content/blob/main/tools/new-campaign.py): scaffolds a new pack
-- [hunt/](https://github.com/saluca-labs/detection-content/tree/main/hunt): cross-campaign read-only hunt scripts (PowerShell and Python) with unit and mutation tests
+- [tools/validate.py](https://github.com/saluca-labs/detection-content/blob/main/tools/validate.py): `python tools/validate.py [slug ...]`. Sigma fields and repository-wide UUID uniqueness, Sigma correlation references, YARA compile, Suricata pattern checks (sids unique per file), indicator CSV columns, em-dash and secret sweep under campaigns/
+- [tools/suricata_test.py](https://github.com/saluca-labs/detection-content/blob/main/tools/suricata_test.py): `python tools/suricata_test.py [slug ...]`. Loads every rule file in Docker image jasonish/suricata:7.0.17; fires campaigns/<slug>/tests/build_test_pcap.py where present and requires exact alert counts. Needs Docker and scapy
+- [tools/new-campaign.py](https://github.com/saluca-labs/detection-content/blob/main/tools/new-campaign.py): `python tools/new-campaign.py <slug> --title "<name>" [--oneliner "<text>"]`. Scaffolds a pack
+- [tools/zenodo_deposit.py](https://github.com/saluca-labs/detection-content/blob/main/tools/zenodo_deposit.py): `python tools/zenodo_deposit.py <slug> [--deposition ID] [--no-archive]`. Maintainers only: creates a Zenodo draft and stops; it never publishes
+
+## Hunt scripts (hunt/, all read-only)
+
+- [hunt/public_scan_search.py](https://github.com/saluca-labs/detection-content/blob/main/hunt/public_scan_search.py): subcommands `urlscan --host H [--since YYYY-MM-DD] [--max N]`, `urlquery [--host H] [--field domain|fqdn] [--max N] [--dataset DIR] [--report FILE ...]`, `logs FILE [--window S] [--scope path|host] [--nonprod-window S]`, `classify URL ...`; global `--json`
+- [hunt/rsa_oracle_audit.py](https://github.com/saluca-labs/detection-content/blob/main/hunt/rsa_oracle_audit.py): subcommands `scan-code PATH ...`, `pkcs11 --module LIB [--token-label L] [--pin-env VAR]`, `reconcile --ledger CSV --observed CSV` or `reconcile --tokens CSV`, `shape --modulus-bits N --inputs FILE [--expect-padding pkcs1v15-sign|iso9796-2|x931] [--short-margin N]`; global `--json`
+- [hunt/transitive_egress_audit.py](https://github.com/saluca-labs/detection-content/blob/main/hunt/transitive_egress_audit.py): subcommands `gem PATH ...`, `dns LOG [--allow FILE] [--suffix-list FILE] [--min-unique N] [--long-label N] [--long-name N]`, `latency CSV [--max-contain-minutes M]`, `coverage --seen FILE --scope FILE`; global `--json`
+- [hunt/Invoke-AgenticExposureSweep.ps1](https://github.com/saluca-labs/detection-content/blob/main/hunt/Invoke-AgenticExposureSweep.ps1): `[-OutputPath DIR] [-IncludeUserProfiles]`. Windows host sweep for LLM agent frameworks and activity
+- [hunt/Invoke-BorrowedTrustSweep.ps1](https://github.com/saluca-labs/detection-content/blob/main/hunt/Invoke-BorrowedTrustSweep.ps1): `[-Deep] [-JsonOut FILE]`. Windows host sweep for the three Borrowed Trust campaigns
+- [hunt/Invoke-DevToolchainExposureReview.ps1](https://github.com/saluca-labs/detection-content/blob/main/hunt/Invoke-DevToolchainExposureReview.ps1): `-Roots DIR[,DIR] [-JsonOut FILE]`. Developer-machine toolchain review
+
+## Tests (what CI runs, .github/workflows/validate.yml)
+
+- [hunt/tests/](https://github.com/saluca-labs/detection-content/tree/main/hunt/tests): `python -m unittest hunt/tests/test_rsa_oracle_audit.py`, `test_public_scan_search.py`, `test_transitive_egress_audit.py`; mutation harnesses `python hunt/tests/public_scan_search_mutants.py` and `transitive_egress_audit_mutants.py`; `python hunt/tests/semgrep_test.py [--rules FILE]` (Docker, semgrep/semgrep:1.177.0); `python hunt/tests/pkcs11_softhsm_test.py` (Docker, SoftHSM2)
+- [.github/workflows/validate.yml](https://github.com/saluca-labs/detection-content/blob/main/.github/workflows/validate.yml): jobs validate, suricata-engine, hunt-tools
+
+## Maintain
+
+- [WORKFLOW.md](https://github.com/saluca-labs/detection-content/blob/main/WORKFLOW.md): maintainers' procedure from public report to pack, paper and deposit
 
 ## Optional
 
 - [CITATION.cff](https://github.com/saluca-labs/detection-content/blob/main/CITATION.cff): how to cite the repository; each paper has its own concept DOI
-- [WORKFLOW.md](https://github.com/saluca-labs/detection-content/blob/main/WORKFLOW.md): maintainers' procedure from public report to published paper
-- [AGENTS.md](https://github.com/saluca-labs/detection-content/blob/main/AGENTS.md): instructions for coding agents working in the repository
+- [RELEASE-NOTES-v1.0.0.md](https://github.com/saluca-labs/detection-content/blob/main/RELEASE-NOTES-v1.0.0.md): v1.0.0 consolidation notes (historical; its single growing citation plan was reverted, each paper has its own DOI)

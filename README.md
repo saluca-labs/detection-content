@@ -6,6 +6,24 @@ repository. Each analysis is published separately with its own DOI.
 Defensive only. Apache-2.0. For detection engineers and SOC teams who run Sigma, YARA,
 Suricata, KQL or SPL, and for readers of the companion papers.
 
+New here? [docs/README.md](docs/README.md) maps every document by what you want to do.
+
+## How it works
+
+How a pack moves through the repository's own tools. Every box is a file or command in this
+repository; the last step is a human one by design.
+
+```mermaid
+flowchart LR
+  NC["tools/new-campaign.py slug --title"] --> PACK["campaigns/slug/<br/>README.md, detections/, iocs/indicators.csv"]
+  PACK --> VAL["tools/validate.py<br/>check_sigma, check_yara, check_suricata,<br/>check_iocs, check_house"]
+  PACK --> LOAD["tools/suricata_test.py check_load<br/>suricata -T on each .rules file"]
+  PACK --> FIRE["tools/suricata_test.py check_fire<br/>builds a pcap from campaigns/slug/tests/build_test_pcap.py<br/>alert count per sid must equal EXPECT_COUNTS"]
+  PACK --> ZEN["tools/zenodo_deposit.py slug<br/>.zenodo.json, paper .md and .pdf, git archive"]
+  ZEN --> DRAFT["Zenodo draft with a reserved DOI<br/>script stops, a human publishes"]
+  PACK --> YOU["You: copy detections/platform/<br/>into your SIEM, EDR or sensor"]
+```
+
 ## Status
 
 Maintained: new campaign packs are added as pull requests. Every rule ships
@@ -25,6 +43,13 @@ What was checked on 2026-10-22, from a clean clone of `main` on Windows 11, Pyth
 
 The KQL and SPL content is not executed anywhere, here or in CI: there is no tenant or Splunk
 instance behind it.
+
+To re-derive any row, run its command from a clean clone. The scripts are
+[`tools/validate.py`](tools/validate.py), [`tools/suricata_test.py`](tools/suricata_test.py) and
+the files under [`hunt/tests/`](hunt/tests/); their inputs are the files under `campaigns/` (the
+expected pcap alert counts are the `EXPECT_COUNTS` in each `campaigns/<slug>/tests/build_test_pcap.py`)
+and the fixtures in `hunt/tests/fixtures/`. The analyses behind the packs are cited by concept DOI
+in the Citation section.
 
 ## Install
 
@@ -145,6 +170,60 @@ tools/zenodo_deposit.py     maintainers' deposit helper (see WORKFLOW.md)
 No malware, samples or payloads are stored here. Indicator files hold published hashes,
 domains and IP addresses, each row naming its source; the test pcaps are generated at test
 time from inert values; the Semgrep fixtures are short code snippets that exercise the rules.
+
+### What CI runs, and where
+
+`.github/workflows/validate.yml` runs three jobs on every push and pull request. Three of the
+checks start a pinned Docker container and mount what they test read-only. Nothing in CI
+executes the KQL or SPL.
+
+```mermaid
+flowchart TB
+  subgraph CI[".github/workflows/validate.yml"]
+    subgraph J1["job: validate"]
+      V["python tools/validate.py"]
+    end
+    subgraph J2["job: suricata-engine"]
+      S["python tools/suricata_test.py"]
+    end
+    subgraph J3["job: hunt-tools"]
+      T1["unittest hunt/tests/test_rsa_oracle_audit.py"]
+      T2["unittest hunt/tests/test_public_scan_search.py<br/>then public_scan_search_mutants.py"]
+      T3["unittest hunt/tests/test_transitive_egress_audit.py<br/>then transitive_egress_audit_mutants.py"]
+      SG["python hunt/tests/semgrep_test.py"]
+      HSM["python hunt/tests/pkcs11_softhsm_test.py"]
+    end
+  end
+  subgraph DK["Docker containers, pinned images"]
+    SI["jasonish/suricata:7.0.17"]
+    SE["semgrep/semgrep:1.177.0"]
+    PY["python:3.12-slim with SoftHSM2"]
+  end
+  S --> SI
+  SG --> SE
+  HSM --> PY
+  T1 --> RSA["hunt/rsa_oracle_audit.py"]
+  PY --> RSA
+  T2 --> PSS["hunt/public_scan_search.py"]
+  T3 --> TEA["hunt/transitive_egress_audit.py"]
+  V --> C["campaigns/slug/detections and iocs"]
+  SI --> C
+  SE --> F["hunt/tests/fixtures/semgrep<br/>rsa-raw-oracle semgrep rules"]
+  NX["Not executed anywhere:<br/>the .kql and .spl files under detections/"]
+```
+
+### In this repository, and not
+
+| Part | Here? | Licence | Where it lives |
+|---|---|---|---|
+| Detection rules, indicator files, hunt scripts, validation tooling | yes | Apache-2.0 | `campaigns/`, `hunt/`, `tools/` |
+| Paper markdown and PDF | for 7 of 9 packs | CC-BY-4.0 | `campaigns/<slug>/<paper>-v*.md`; Borrowed Trust's paper is on Zenodo only, Gulf conflict has no paper |
+| The citable, versioned record of each paper | no | CC-BY-4.0 | Zenodo, one concept DOI per paper (Citation section) |
+| The PDF build tool named in WORKFLOW.md | no | - | maintainers' private tooling |
+| Articles about the packs | no | - | published separately, after the deposit |
+| Earlier standalone copy of the Borrowed Trust pack | no | - | [saluca-labs/borrowed-trust-detections](https://github.com/saluca-labs/borrowed-trust-detections) |
+| Packs in open pull requests | not until merged | - | this repository's pull requests |
+| Malware samples, payloads, exploit code | no, by design | - | nowhere in this repository |
 
 ## Citation
 
