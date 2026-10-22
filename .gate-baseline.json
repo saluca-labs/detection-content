@@ -1,0 +1,138 @@
+{
+ "version": 2,
+ "written": "2026-10-22",
+ "rule": "debt may only shrink; see repo-merge-gate.md GATE-3",
+ "note": "ids are hashes of each finding; run `python -m gate run` to see them",
+ "entries": [
+  {
+   "check": "paths",
+   "id": "a1afad279f6804fcbc72",
+   "path": "WORKFLOW.md"
+  },
+  {
+   "check": "paths",
+   "id": "a1afad279f6804fcbc72",
+   "path": "WORKFLOW.md"
+  },
+  {
+   "check": "paths",
+   "id": "a1afad279f6804fcbc72",
+   "path": "WORKFLOW.md"
+  },
+  {
+   "check": "paths",
+   "id": "356650d55cc40172d3d6",
+   "path": "hunt/Invoke-AgenticExposureSweep.ps1"
+  },
+  {
+   "check": "paths",
+   "id": "6d917077df71aded6c00",
+   "path": "hunt/Invoke-AgenticExposureSweep.ps1"
+  },
+  {
+   "check": "paths",
+   "id": "b5101a830b07bd2a5b9b",
+   "path": "hunt/Invoke-DevToolchainExposureReview.ps1"
+  },
+  {
+   "check": "paths",
+   "id": "b41092039f66d107f552",
+   "path": "hunt/Invoke-DevToolchainExposureReview.ps1"
+  },
+  {
+   "check": "paths",
+   "id": "24a58a7cb92f910b9bee",
+   "path": "hunt/Invoke-DevToolchainExposureReview.ps1"
+  },
+  {
+   "check": "paths",
+   "id": "a9e2aac659e68cd96df9",
+   "path": "tools/zenodo_deposit.py"
+  },
+  {
+   "check": "style",
+   "id": "9a47a97c4e6438bb2390",
+   "path": "RELEASE-NOTES-v1.0.0.md"
+  },
+  {
+   "check": "style",
+   "id": "b47504fd74c0da2291a7",
+   "path": "RELEASE-NOTES-v1.0.0.md"
+  },
+  {
+   "check": "style",
+   "id": "728d80cc439b2a8174c2",
+   "path": "RELEASE-NOTES-v1.0.0.md"
+  },
+  {
+   "check": "style",
+   "id": "5cdaffb2c562707aba9f",
+   "path": "RELEASE-NOTES-v1.0.0.md"
+  },
+  {
+   "check": "style",
+   "id": "4b6c135cee50dcc59906",
+   "path": "RELEASE-NOTES-v1.0.0.md"
+  },
+  {
+   "check": "style",
+   "id": "618c23f5f7389c0ee87d",
+   "path": "RELEASE-NOTES-v1.0.0.md"
+  },
+  {
+   "check": "test-markers",
+   "id": "4168d098f0f96c97f303",
+   "path": "hunt/tests/test_public_scan_search.py"
+  },
+  {
+   "check": "test-markers",
+   "id": "849821a1184a76069b4b",
+   "path": "hunt/tests/test_public_scan_search.py"
+  },
+  {
+   "check": "claims",
+   "id": "a59c86aa776f4a18c505",
+   "path": ""
+  },
+  {
+   "check": "docs",
+   "id": "b4d08d8b436c35746850",
+   "path": "README.md"
+  },
+  {
+   "check": "docs",
+   "id": "778c8d0a7ee6fb263adf",
+   "path": "README.md"
+  },
+  {
+   "check": "docs",
+   "id": "aafc68c653a507b6941e",
+   "path": "README.md"
+  },
+  {
+   "check": "docs",
+   "id": "bbb1f99b140392f1906f",
+   "path": "README.md"
+  },
+  {
+   "check": "docs",
+   "id": "7fcb8037f0cbaee52798",
+   "path": "README.md"
+  },
+  {
+   "check": "docs",
+   "id": "d1d18256ebd90ac25aa0",
+   "path": "README.md"
+  },
+  {
+   "check": "docs",
+   "id": "b79ed584daf8a632b453",
+   "path": ""
+  },
+  {
+   "check": "branch-protection",
+   "id": "f0fac6b41c6325ac9702",
+   "path": ""
+  }
+ ]
+}
