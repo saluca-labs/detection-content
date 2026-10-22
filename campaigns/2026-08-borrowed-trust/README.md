@@ -99,6 +99,15 @@ third-party input method editors write there legitimately. The FDMTP port-range 
 custom internal services unless you scope it to non-RFC1918 destinations. The `.sbs` TLD Suricata
 rule is deliberately shipped as a hunt, not an alert.
 
+## Correction, 2026-10-22
+
+- **There are 26 Suricata rules, not 24** as the layout and validation tables in this README say.
+- Under "What you cannot detect here", this README says the campaign A executable "is genuinely
+  signed by the Notepad++ project". The source report describes it as legitimate and signed but
+  does not name the signer, which this README already corrected in the campaign description on
+  2026-08-10 and missed in that later sentence. Read it as "is a legitimately signed binary; the
+  report does not name the signer".
+
 ## Correction, 2026-09-16
 
 The Suricata rules in this pack, as first published, **did not load in Suricata**. The
