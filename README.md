@@ -268,7 +268,14 @@ Captured 2026-10-22 from a clean clone on Windows 11; command and captured text 
 
 ## License
 
-Apache-2.0 (SPDX `Apache-2.0`). See [LICENSE](LICENSE). Report text is CC-BY-4.0.
+Split by path, declared file by file in [`REUSE.toml`](REUSE.toml) ([REUSE](https://reuse.software)
+layout; the licence texts are in [`LICENSES/`](LICENSES/)):
+
+- **Detection content, tooling, tests, CI and repository docs** (each pack's `detections/` and
+  `tests/`, `hunt/`, `tools/`, `.github/`, the READMEs, `docs/`): **Apache-2.0**, see
+  [LICENSE](LICENSE).
+- **Report text and data** (each pack's paper, `campaigns/*/*-v*.md` and `*-v*.pdf`, and its
+  `iocs/`): **CC-BY-4.0**, the licence of the papers' Zenodo records.
 
 ## Links
 

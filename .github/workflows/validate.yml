@@ -20,7 +20,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: pip install scapy
+      # scapy pinned like the Suricata image above. 2.8.0 (2026-10) imports its TLS HMAC from
+      # cryptography and fails with NameError: HMAC when cryptography is absent; 2.7.0 is the last
+      # version this job passed with (run 36339263404, 2026-09-27).
+      - run: pip install scapy==2.7.0
       - run: docker pull jasonish/suricata:7.0.17
       - run: python tools/suricata_test.py
   hunt-tools:

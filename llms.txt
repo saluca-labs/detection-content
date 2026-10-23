@@ -1,6 +1,6 @@
 # detection-content
 
-> Defensive detection engineering content from Saluca Labs: one pack per public threat campaign (Sigma, KQL, Splunk SPL, Suricata, YARA and Semgrep rules, indicator CSVs, read-only hunt scripts); 8 of the 9 packs on main have a companion paper on Zenodo. Detection content and tooling Apache-2.0; report text CC-BY-4.0.
+> Defensive detection engineering content from Saluca Labs: one pack per public threat campaign (Sigma, KQL, Splunk SPL, Suricata, YARA and Semgrep rules, indicator CSVs, read-only hunt scripts); 8 of the 9 packs on main have a companion paper on Zenodo. Detection content and tooling Apache-2.0; report text and indicator data CC-BY-4.0, declared by path in REUSE.toml.
 
 Every rule ships status: experimental and none has been tuned on real telemetry. Each campaign README states what cannot be detected before what can. There is no malware, sample or payload in the repository: indicator files hold published hashes, domains and IPs with their sources, or a NOTE row saying none exist. KQL and SPL are never executed anywhere (no tenant). Sigma and YARA are checked by tools/validate.py; Suricata files are loaded in a real pinned engine by tools/suricata_test.py. Packs in open pull requests are not on main.
 
