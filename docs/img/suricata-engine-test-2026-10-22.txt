@@ -1,0 +1,22 @@
+Captured 2026-10-22 from a clean clone of saluca-labs/detection-content (branch from origin/main), Windows 11, Docker 29.8.0.
+Python 3.12.10, scapy 2.7.0, Suricata image jasonish/suricata:7.0.17, PYTHONIOENCODING=utf-8, MSYS_NO_PATHCONV=1 (Git Bash).
+Command, run from the repository root (the '$ ' line in the image is this command; every other line is the unedited output, including scapy's libpcap warning):
+  python tools/suricata_test.py
+Rendered with rich Console(record=True).save_svg, then headless Chromium (playwright) to PNG, ligatures off.
+
+----- captured text -----
+$ python tools/suricata_test.py
+WARNING: No libpcap provider available ! pcap won't be used
+Suricata engine test, image jasonish/suricata:7.0.17
+
+  load  campaigns\2026-08-agentic-intrusion\detections\suricata\agentic-intrusion.rules 8/8
+  load  campaigns\2026-08-borrowed-trust\detections\suricata\borrowed-trust.rules 26/26
+  load  campaigns\2026-09-agent-collusion\detections\suricata\agent-collusion.rules 17/17
+  load  campaigns\2026-09-gulf-conflict-cyber\detections\suricata\gulf-conflict-cyber.rules 15/15
+  fire  2026-09-gulf-conflict-cyber                                            16 alerts across 15 sids, as expected
+  load  campaigns\2026-09-laundered-vantage\detections\suricata\laundered-vantage.rules 12/12
+  fire  2026-09-laundered-vantage                                              14 alerts across 12 sids, as expected
+  load  campaigns\2026-09-transitive-egress\detections\suricata\transitive-egress.rules 23/23
+  fire  2026-09-transitive-egress                                              29 alerts across 23 sids, as expected
+
+All Suricata rule files load and every shipped pcap test fires exactly as expected.

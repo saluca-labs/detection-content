@@ -1,0 +1,20 @@
+# REUSE declaration of this repository's licences, by path (https://reuse.software/spec-3.3/).
+# Cristian's ruling 2026-10-22, "split by path": code keeps the repository licence; the paper,
+# figures and data take the licence of the Zenodo record. Licence texts: LICENSES/, from
+# https://github.com/spdx/license-list-data/blob/31ba1a50e5397e00a304dbadc76531740e89ee48/text/<id>.txt
+version = 1
+
+[[annotations]]
+path = "**"
+SPDX-FileCopyrightText = "2026 Saluca Labs"
+SPDX-License-Identifier = "Apache-2.0"
+
+# Paper, figures and data. Later annotations take precedence over earlier ones.
+[[annotations]]
+path = [
+  "campaigns/*/*-v*.md",
+  "campaigns/*/*-v*.pdf",
+  "campaigns/*/iocs/**",
+]
+SPDX-FileCopyrightText = "2026 Saluca Labs"
+SPDX-License-Identifier = "CC-BY-4.0"

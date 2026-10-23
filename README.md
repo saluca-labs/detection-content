@@ -3,7 +3,92 @@
 Detection engineering for campaigns worth writing about. One pack per campaign, one
 repository. Each analysis is published separately with its own DOI.
 
-Defensive only. Apache-2.0.
+Defensive only. Apache-2.0. For detection engineers and SOC teams who run Sigma, YARA,
+Suricata, KQL or SPL, and for readers of the companion papers.
+
+New here? [docs/README.md](docs/README.md) maps every document by what you want to do.
+
+## How it works
+
+How a pack moves through the repository's own tools. Every box is a file or command in this
+repository; the last step is a human one by design.
+
+```mermaid
+flowchart LR
+  NC["tools/new-campaign.py slug --title"] --> PACK["campaigns/slug/<br/>README.md, detections/, iocs/indicators.csv"]
+  PACK --> VAL["tools/validate.py<br/>check_sigma, check_yara, check_suricata,<br/>check_iocs, check_house"]
+  PACK --> LOAD["tools/suricata_test.py check_load<br/>suricata -T on each .rules file"]
+  PACK --> FIRE["tools/suricata_test.py check_fire<br/>builds a pcap from campaigns/slug/tests/build_test_pcap.py<br/>alert count per sid must equal EXPECT_COUNTS"]
+  PACK --> ZEN["tools/zenodo_deposit.py slug<br/>.zenodo.json, paper .md and .pdf, git archive"]
+  ZEN --> DRAFT["Zenodo draft with a reserved DOI<br/>script stops, a human publishes"]
+  PACK --> YOU["You: copy detections/platform/<br/>into your SIEM, EDR or sensor"]
+```
+
+## Status
+
+Maintained: new campaign packs are added as pull requests. Every rule ships
+`status: experimental` and none has been tuned against real telemetry (see "What this is, and
+what it is not" below).
+
+What was checked on 2026-10-22, from a clean clone of `main` on Windows 11, Python 3.12.10:
+
+| Check | Result |
+|---|---|
+| `python tools/validate.py` | all checks passed, 9 campaigns, 83 unique rule ids |
+| `python tools/suricata_test.py` (Docker, `jasonish/suricata:7.0.17`) | every rule file loads (8, 26, 17, 15, 12 and 23 rules); the three shipped pcap tests fire exactly as expected |
+| `python -m unittest` on `hunt/tests/test_rsa_oracle_audit.py`, `test_public_scan_search.py`, `test_transitive_egress_audit.py` | 21, 49 (2 skipped: live network) and 47 tests, all OK |
+| `hunt/tests/public_scan_search_mutants.py`, `transitive_egress_audit_mutants.py` | all 10 and all 20 mutants caught |
+| `sigma check` (sigma-cli 3.1.0, pySigma's bundled ATT&CK data), one run per campaign directory | 7 of 9 campaigns have no errors. Three rule-level errors in the other two: one regular expression in `2026-09-agent-collusion/detections/sigma/write-via-get-webserver.yml` uses `\x{0400}`-style escapes that pySigma rejects, and the two rules in `2026-09-coordination-substrate` use the deprecated pipe aggregation syntax in `condition`, which pySigma does not support. Plus tag warnings: `attack.defense-evasion`, `attack.t1574.002` and several other ATT&CK tags are not in pySigma's current ATT&CK data, and `atlas.*` tags are an unknown namespace to it |
+| `hunt/tests/semgrep_test.py`, `hunt/tests/pkcs11_softhsm_test.py` | not run (they need the Semgrep image and SoftHSM2; CI runs them) |
+
+The KQL and SPL content is not executed anywhere, here or in CI: there is no tenant or Splunk
+instance behind it.
+
+To re-derive any row, run its command from a clean clone. The scripts are
+[`tools/validate.py`](tools/validate.py), [`tools/suricata_test.py`](tools/suricata_test.py) and
+the files under [`hunt/tests/`](hunt/tests/); their inputs are the files under `campaigns/` (the
+expected pcap alert counts are the `EXPECT_COUNTS` in each `campaigns/<slug>/tests/build_test_pcap.py`)
+and the fixtures in `hunt/tests/fixtures/`. The analyses behind the packs are cited by concept DOI
+in the Citation section.
+
+## Install
+
+Nothing to install to use the rules: they are text files for your SIEM, EDR or sensor. To run
+the checks, Python 3.12 with PyYAML and yara-python (tested 2026-10-22 with PyYAML 6.0.3 and
+yara-python 4.5.4), plus Docker and scapy for the Suricata engine test:
+
+```bash
+git clone https://github.com/saluca-labs/detection-content
+cd detection-content
+python -m pip install pyyaml yara-python scapy
+docker pull jasonish/suricata:7.0.17
+```
+
+## Quickstart
+
+```bash
+python tools/validate.py
+```
+
+Output from a run on 2026-10-22:
+
+```
+Validating 9 campaign(s)
+
+  2026-08-agentic-intrusion          sigma=7   yara=0   suricata=8   iocs=22
+  2026-08-borrowed-trust             sigma=22  yara=12  suricata=26  iocs=103
+  2026-09-agent-collusion            sigma=11  yara=0   suricata=17  iocs=31
+  2026-09-coordination-substrate     sigma=4   yara=0   suricata=0   iocs=23
+  2026-09-gulf-conflict-cyber        sigma=9   yara=0   suricata=15  iocs=71
+  2026-09-laundered-vantage          sigma=7   yara=0   suricata=12  iocs=20
+  2026-09-llm-tasked-c2              sigma=5   yara=0   suricata=0   iocs=29
+  2026-09-rsa-raw-oracle             sigma=4   yara=0   suricata=0   iocs=7
+  2026-09-transitive-egress          sigma=14  yara=0   suricata=23  iocs=15
+
+  note: 2026-08-borrowed-trust uses the pre-consolidation indicator schema (accepted)
+
+All checks passed. 83 unique rule ids across the repository.
+```
 
 ---
 
@@ -39,7 +124,7 @@ Rules ship `status: experimental` until they have been tuned against real teleme
 real estate. Thresholds are starting points. Anyone deploying these as alerts without
 baselining first should expect noise, and that is documented rather than hidden.
 
-## Using it
+## Usage
 
 ```bash
 python tools/validate.py                       # validate everything
@@ -52,6 +137,93 @@ compilation, Suricata sid uniqueness and syntax, indicator CSV columns, house st
 sweep for secret-shaped strings. It runs in CI, and nothing gets a DOI until it is green.
 
 The full procedure from public report to published article is in [WORKFLOW.md](WORKFLOW.md).
+
+Engine and hunt-tool checks (the same commands CI runs):
+
+```bash
+python tools/suricata_test.py                  # load every rule file in Suricata 7.0.17, fire shipped pcaps
+python -m unittest hunt/tests/test_transitive_egress_audit.py -v
+python hunt/tests/transitive_egress_audit_mutants.py
+```
+
+To deploy a pack, take the files under `campaigns/<slug>/detections/` for your platform and
+read that campaign's README first: each one lists which rules are alerts, which are hunts, and
+what needs a baseline before it is enabled.
+
+## Architecture
+
+```
+campaigns/<slug>/
+  README.md                 what it detects, what it cannot, deployment order
+  <paper>-v1.x.md / .pdf    the companion paper (where one exists)
+  .zenodo.json              deposit metadata for the paper
+  detections/{sigma,kql,splunk,suricata,yara,semgrep}/
+  iocs/indicators.csv       atomic indicators, or a NOTE row saying none were published
+  tests/build_test_pcap.py  synthetic pcap with inert positive and negative cases (some packs)
+hunt/                       cross-campaign hunt scripts (read-only) and their tests
+tools/validate.py           repository-wide pattern and schema checks (CI)
+tools/suricata_test.py      real-engine load and fire test (CI)
+tools/new-campaign.py       scaffolds a pack with the house structure
+tools/zenodo_deposit.py     maintainers' deposit helper (see WORKFLOW.md)
+```
+
+No malware, samples or payloads are stored here. Indicator files hold published hashes,
+domains and IP addresses, each row naming its source; the test pcaps are generated at test
+time from inert values; the Semgrep fixtures are short code snippets that exercise the rules.
+
+### What CI runs, and where
+
+`.github/workflows/validate.yml` runs three jobs on every push and pull request. Three of the
+checks start a pinned Docker container and mount what they test read-only. Nothing in CI
+executes the KQL or SPL.
+
+```mermaid
+flowchart TB
+  subgraph CI[".github/workflows/validate.yml"]
+    subgraph J1["job: validate"]
+      V["python tools/validate.py"]
+    end
+    subgraph J2["job: suricata-engine"]
+      S["python tools/suricata_test.py"]
+    end
+    subgraph J3["job: hunt-tools"]
+      T1["unittest hunt/tests/test_rsa_oracle_audit.py"]
+      T2["unittest hunt/tests/test_public_scan_search.py<br/>then public_scan_search_mutants.py"]
+      T3["unittest hunt/tests/test_transitive_egress_audit.py<br/>then transitive_egress_audit_mutants.py"]
+      SG["python hunt/tests/semgrep_test.py"]
+      HSM["python hunt/tests/pkcs11_softhsm_test.py"]
+    end
+  end
+  subgraph DK["Docker containers, pinned images"]
+    SI["jasonish/suricata:7.0.17"]
+    SE["semgrep/semgrep:1.177.0"]
+    PY["python:3.12-slim with SoftHSM2"]
+  end
+  S --> SI
+  SG --> SE
+  HSM --> PY
+  T1 --> RSA["hunt/rsa_oracle_audit.py"]
+  PY --> RSA
+  T2 --> PSS["hunt/public_scan_search.py"]
+  T3 --> TEA["hunt/transitive_egress_audit.py"]
+  V --> C["campaigns/slug/detections and iocs"]
+  SI --> C
+  SE --> F["hunt/tests/fixtures/semgrep<br/>rsa-raw-oracle semgrep rules"]
+  NX["Not executed anywhere:<br/>the .kql and .spl files under detections/"]
+```
+
+### In this repository, and not
+
+| Part | Here? | Licence | Where it lives |
+|---|---|---|---|
+| Detection rules, indicator files, hunt scripts, validation tooling | yes | Apache-2.0 | `campaigns/`, `hunt/`, `tools/` |
+| Paper markdown and PDF | for 7 of 9 packs | CC-BY-4.0 | `campaigns/<slug>/<paper>-v*.md`; Borrowed Trust's paper is on Zenodo only, Gulf conflict has no paper |
+| The citable, versioned record of each paper | no | CC-BY-4.0 | Zenodo, one concept DOI per paper (Citation section) |
+| The PDF build tool named in WORKFLOW.md | no | - | maintainers' private tooling |
+| Articles about the packs | no | - | published separately, after the deposit |
+| Earlier standalone copy of the Borrowed Trust pack | no | - | [saluca-labs/borrowed-trust-detections](https://github.com/saluca-labs/borrowed-trust-detections) |
+| Packs in open pull requests | not until merged | - | this repository's pull requests |
+| Malware samples, payloads, exploit code | no, by design | - | nowhere in this repository |
 
 ## Citation
 
@@ -87,8 +259,31 @@ Written with AI assistance throughout. Rule logic, the limitations sections, and
 about what was and was not validated are authored and reviewed by a human. The limitations
 sections exist specifically because generated detection content tends to overstate coverage.
 
+## Screenshots
+
+![Terminal output of tools/suricata_test.py: every Suricata rule file loads in Suricata 7.0.17, and the three shipped pcap tests fire exactly as expected](docs/img/suricata-engine-test-2026-10-22.png)
+
+Captured 2026-10-22 from a clean clone on Windows 11; command and captured text in
+[`docs/img/suricata-engine-test-2026-10-22.txt`](docs/img/suricata-engine-test-2026-10-22.txt).
+
 ## License
 
-Apache-2.0. See [LICENSE](LICENSE).
+Split by path, declared file by file in [`REUSE.toml`](REUSE.toml) ([REUSE](https://reuse.software)
+layout; the licence texts are in [`LICENSES/`](LICENSES/)):
 
-— Saluca Labs
+- **Detection content, tooling, tests, CI and repository docs** (each pack's `detections/` and
+  `tests/`, `hunt/`, `tools/`, `.github/`, the READMEs, `docs/`): **Apache-2.0**, see
+  [LICENSE](LICENSE).
+- **Report text and data** (each pack's paper, `campaigns/*/*-v*.md` and `*-v*.pdf`, and its
+  `iocs/`): **CC-BY-4.0**, the licence of the papers' Zenodo records.
+
+## Links
+
+- Companion papers: the DOIs in the Citation table above
+- [WORKFLOW.md](WORKFLOW.md): how a pack goes from public report to published paper
+- Earlier standalone copy of the Borrowed Trust pack:
+  https://github.com/saluca-labs/borrowed-trust-detections
+
+Saluca Labs
+
+_Last updated: 2026-10-22_
