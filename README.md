@@ -1,3 +1,5 @@
+![detection-content](docs/img/banner-2026-10-23.jpg)
+
 # Saluca Detection Content
 
 Detection engineering for campaigns worth writing about. One pack per campaign, one
