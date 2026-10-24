@@ -1,0 +1,47 @@
+{
+  "title": "OpenAI Conference Room Recording Device: A Detection Engineering Analysis of Insider Physical Surveillance",
+  "upload_type": "publication",
+  "publication_type": "report",
+  "description": "<p>In late September 2026, OpenAI discovered a concealed recording device hidden in toilet paper and plugged into the back of a television in a restricted executive conference room. The FBI alleged that Abdulrahman Alfozan, a 35-year-old OpenAI engineer from Saudi Arabia, planted the device to spy on leadership discussions covering technical progress, government engagements, and commercial partnerships. According to an affidavit by FBI Special Agent Lydia Liang, the device was a customised Seeed XIAO ESP32-S3 Sense with an encrypted filesystem, planted on or around 28 September and recovered on 30 September. The investigation also revealed that Alfozan had queried an internal productivity agent to identify sensitive meeting locations and schedules, and that a second recording device was found in an unattended bag he reported to lost and found. This working paper examines the detection opportunities suggested by the incident, maps them to four Sigma rules covering internal AI assistant queries, badge access patterns, USB device connections, and unaccounted electronic devices in lost and found. It also identifies what remains invisible to network and endpoint detection, given that the device operated as a standalone physical object with no enterprise network footprint.</p><p><strong>Working draft 0.1, machine drafted.</strong> Companion detection content is in <a href=\"https://github.com/saluca-labs/detection-content\">saluca-labs/detection-content</a> under Apache-2.0.</p>",
+  "creators": [
+    {
+      "name": "Ruvalcaba, Cristian",
+      "affiliation": "Saluca LLC"
+    },
+    {
+      "name": "Saluca Agentic AI Research Team",
+      "affiliation": "Saluca LLC"
+    }
+  ],
+  "keywords": [
+    "detection engineering",
+    "ai security",
+    "sigma rules",
+    "threat detection",
+    "blue team"
+  ],
+  "license": "cc-by-4.0",
+  "access_right": "open",
+  "version": "0.1",
+  "communities": [
+    {
+      "identifier": "saluca"
+    }
+  ],
+  "related_identifiers": [
+    {
+      "identifier": "https://arstechnica.com/tech-policy/2026/10/fbi-arrests-openai-engineer-suspected-of-planting-bug-in-conference-room/",
+      "relation": "isDerivedFrom",
+      "resource_type": "publication-report",
+      "scheme": "url"
+    },
+    {
+      "identifier": "https://github.com/saluca-labs/detection-content",
+      "relation": "isSupplementedBy",
+      "resource_type": "software",
+      "scheme": "url"
+    }
+  ],
+  "notes": "MACHINE-DRAFTED WORKING PAPER (Saluca edition_detection, on Cristian's Telegram press of the detection choice for https://arstechnica.com/tech-policy/2026/10/fbi-arrests-openai-engineer-suspected-of-planting-bug-in-conference-room/). Built from the primary source and a launcher assessment whose quotes were string-checked against it; nothing was reproduced or detonated, no rule has run against real telemetry, and Sigma rules are schema-checked only. It must be read and edited by the named human author before publication. The report text is CC-BY-4.0; the detection content and tooling are Apache-2.0 per the repository LICENSE. Prepared with AI assistance.",
+  "prereserve_doi": true
+}
