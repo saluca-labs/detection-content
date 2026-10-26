@@ -11,16 +11,6 @@
   },
   {
    "check": "paths",
-   "id": "a1afad279f6804fcbc72",
-   "path": "WORKFLOW.md"
-  },
-  {
-   "check": "paths",
-   "id": "a1afad279f6804fcbc72",
-   "path": "WORKFLOW.md"
-  },
-  {
-   "check": "paths",
    "id": "356650d55cc40172d3d6",
    "path": "hunt/Invoke-AgenticExposureSweep.ps1"
   },
