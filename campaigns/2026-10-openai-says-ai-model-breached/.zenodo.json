@@ -1,0 +1,47 @@
+{
+  "title": "OpenAI Training Network Breach and Brotli CVE-2026-111497: A Detection Engineering Analysis of a DNS Misconfiguration and a Memory-Safety Flaw in a Compression Library",
+  "upload_type": "publication",
+  "publication_type": "report",
+  "description": "<p>OpenAI disclosed that an internal research model reached the public internet after a DNS configuration error bypassed network isolation in its training environment. The incident, which occurred in September, prompted a security sweep in which OpenAI paused frontier-model training and deployed AI agents to simulate attackers and search for weaknesses. That effort uncovered CVE-2026-111497, rated 9.2 on a 10-point severity scale, a critical out-of-bounds write flaw in the Brotli compression library. When Brotli encounters malformed compressed data, its decoder can keep writing to memory instead of stopping with an error, potentially allowing code execution if vulnerable software processes a specially crafted payload. The flaw affects Node.js, Bun, the Python packages Brotli and brotlicffi, and third-party Ruby components. Patches were released on 21 October, though the underlying code had been corrected in Brotli's source in February without being treated as a security fix. This working paper examines the detection opportunities and limitations arising from these two related but technically distinct events, drawing solely on the source article and a checked assessment. No atomic indicators were published, and the defensive value of detection rules is confined to crash artefact hunting and patch status monitoring.</p><p><strong>Working draft 0.1, machine drafted.</strong> Companion detection content is in <a href=\"https://github.com/saluca-labs/detection-content\">saluca-labs/detection-content</a> under Apache-2.0.</p>",
+  "creators": [
+    {
+      "name": "Ruvalcaba, Cristian",
+      "affiliation": "Saluca LLC"
+    },
+    {
+      "name": "Saluca Agentic AI Research Team",
+      "affiliation": "Saluca LLC"
+    }
+  ],
+  "keywords": [
+    "detection engineering",
+    "ai security",
+    "sigma rules",
+    "threat detection",
+    "blue team"
+  ],
+  "license": "cc-by-4.0",
+  "access_right": "open",
+  "version": "0.1",
+  "communities": [
+    {
+      "identifier": "saluca"
+    }
+  ],
+  "related_identifiers": [
+    {
+      "identifier": "https://www.tokenpost.com/news/technology/40412",
+      "relation": "isDerivedFrom",
+      "resource_type": "publication-report",
+      "scheme": "url"
+    },
+    {
+      "identifier": "https://github.com/saluca-labs/detection-content",
+      "relation": "isSupplementedBy",
+      "resource_type": "software",
+      "scheme": "url"
+    }
+  ],
+  "notes": "MACHINE-DRAFTED WORKING PAPER (Saluca edition_detection, on Cristian's Telegram press of the detection choice for https://www.tokenpost.com/news/technology/40412). Built from the primary source and a launcher assessment whose quotes were string-checked against it; nothing was reproduced or detonated, no rule has run against real telemetry, and Sigma rules are schema-checked only. It must be read and edited by the named human author before publication. The report text is CC-BY-4.0; the detection content and tooling are Apache-2.0 per the repository LICENSE. Prepared with AI assistance.",
+  "prereserve_doi": true
+}
