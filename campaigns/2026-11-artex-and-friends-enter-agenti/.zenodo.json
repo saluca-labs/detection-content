@@ -1,0 +1,47 @@
+{
+  "title": "ARTEX and Agentic Offensive Frameworks: A Detection Engineering Analysis of Machine-Speed Intrusion Activity",
+  "upload_type": "publication",
+  "publication_type": "report",
+  "description": "<p>Between late August 2026 and October 2026, Google Threat Intelligence Group and Mandiant observed multiple threat actors weaponising open-source, multi-agent pentesting frameworks, principally ARTEX, to conduct highly automated intrusions across the attack lifecycle. ARTEX, originally developed by the GitHub user Autumn-27 and written in Go with an embedded Next.js web console, abstracts the attack lifecycle across six specialised sub-agents that leverage APIs from frontier and open source models to translate high-level tactical goals into actionable machine commands. The intrusions are notable not for novel techniques but for their compressed execution velocity. The underlying mechanics, including compromised credentials, SQL injection, Kerberoasting, DCSync and Pass-the-Hash, remain standard adversary tradecraft. The defensive challenge lies in detecting the execution pattern and velocity rather than the individual techniques. This working paper maps the observable behavioural patterns documented in the source to four Sigma detection rules covering probe file creation, account creation with ArtexProbe naming conventions, rapid webshell deployment via MySQL general log poisoning, and high-volume web directory fuzzing. It also identifies what remains invisible to defenders, including the LLM orchestration layer itself, and notes the limitations of detections built on burst timing when adversaries may soon trade velocity for stealth.</p><p><strong>Working draft 0.1, machine drafted.</strong> Companion detection content is in <a href=\"https://github.com/saluca-labs/detection-content\">saluca-labs/detection-content</a> under Apache-2.0.</p>",
+  "creators": [
+    {
+      "name": "Ruvalcaba, Cristian",
+      "affiliation": "Saluca LLC"
+    },
+    {
+      "name": "Saluca Agentic AI Research Team",
+      "affiliation": "Saluca LLC"
+    }
+  ],
+  "keywords": [
+    "detection engineering",
+    "ai security",
+    "sigma rules",
+    "threat detection",
+    "blue team"
+  ],
+  "license": "cc-by-4.0",
+  "access_right": "open",
+  "version": "0.1",
+  "communities": [
+    {
+      "identifier": "saluca"
+    }
+  ],
+  "related_identifiers": [
+    {
+      "identifier": "https://cloud.google.com/blog/topics/threat-intelligence/artex-and-friends-enter-agentic-offensive-frameworks/",
+      "relation": "isDerivedFrom",
+      "resource_type": "publication-report",
+      "scheme": "url"
+    },
+    {
+      "identifier": "https://github.com/saluca-labs/detection-content",
+      "relation": "isSupplementedBy",
+      "resource_type": "software",
+      "scheme": "url"
+    }
+  ],
+  "notes": "MACHINE-DRAFTED WORKING PAPER (Saluca edition_detection, on Cristian's Telegram press of the detection choice for https://cloud.google.com/blog/topics/threat-intelligence/artex-and-friends-enter-agentic-offensive-frameworks/). Built from the primary source and a launcher assessment whose quotes were string-checked against it; nothing was reproduced or detonated, no rule has run against real telemetry, and Sigma rules are schema-checked only. It must be read and edited by the named human author before publication. The report text is CC-BY-4.0; the detection content and tooling are Apache-2.0 per the repository LICENSE. Prepared with AI assistance.",
+  "prereserve_doi": true
+}
