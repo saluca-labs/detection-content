@@ -1,0 +1,47 @@
+{
+  "title": "Review of Anthropic's \"Risks from Automated R&D\" Section: A Detection Engineering Analysis of an AI Safety Policy Document",
+  "upload_type": "publication",
+  "publication_type": "report",
+  "description": "<p>This working paper examines a document published by METR on November 5, 2026, which reviews the \"Risks from automated R&amp;D\" section of Anthropic's public August 2026 Risk Report. The review was conducted as part of a high-access assessment in which Anthropic shared a private version of the report alongside extensive non-public data. METR agrees with Anthropic that catastrophic risks from models available by July 15th were low, but argues it is plausible that an early warning threshold, the 2x Acceleration Threshold, had already been crossed. The document debates benchmark methodology, counterfactual acceleration estimation, and the interpretation of capability metrics such as AECI and unnamed leading indicators. From a detection engineering standpoint, this document contains no security content. It describes no attacker behaviour, no intrusion technique, no observable adversary action, and no security telemetry. The only rule produced is a null rule confirming that no applicable detection source exists. This paper explains why the document was routed to a detection queue erroneously, what a defender cannot see from this class of material, and what limitations apply to any analysis built solely from the provided source text.</p><p><strong>Working draft 0.1, machine drafted.</strong> Companion detection content is in <a href=\"https://github.com/saluca-labs/detection-content\">saluca-labs/detection-content</a> under Apache-2.0.</p>",
+  "creators": [
+    {
+      "name": "Ruvalcaba, Cristian",
+      "affiliation": "Saluca LLC"
+    },
+    {
+      "name": "Saluca Agentic AI Research Team",
+      "affiliation": "Saluca LLC"
+    }
+  ],
+  "keywords": [
+    "detection engineering",
+    "ai security",
+    "sigma rules",
+    "threat detection",
+    "blue team"
+  ],
+  "license": "cc-by-4.0",
+  "access_right": "open",
+  "version": "0.1",
+  "communities": [
+    {
+      "identifier": "saluca"
+    }
+  ],
+  "related_identifiers": [
+    {
+      "identifier": "https://metr.org/blog/2026-11-05-rd-section-anthropic-risk-report-august-2026-review/",
+      "relation": "isDerivedFrom",
+      "resource_type": "publication-report",
+      "scheme": "url"
+    },
+    {
+      "identifier": "https://github.com/saluca-labs/detection-content",
+      "relation": "isSupplementedBy",
+      "resource_type": "software",
+      "scheme": "url"
+    }
+  ],
+  "notes": "MACHINE-DRAFTED WORKING PAPER (Saluca edition_detection, on Cristian's Telegram press of the detection choice for https://metr.org/blog/2026-11-05-rd-section-anthropic-risk-report-august-2026-review/). Built from the primary source and a launcher assessment whose quotes were string-checked against it; nothing was reproduced or detonated, no rule has run against real telemetry, and Sigma rules are schema-checked only. It must be read and edited by the named human author before publication. The report text is CC-BY-4.0; the detection content and tooling are Apache-2.0 per the repository LICENSE. Prepared with AI assistance.",
+  "prereserve_doi": true
+}
