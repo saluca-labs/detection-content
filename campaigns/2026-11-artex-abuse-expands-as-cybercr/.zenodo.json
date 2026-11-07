@@ -1,0 +1,47 @@
+{
+  "title": "Storm-3358 ARTEX Abuse: A Detection Engineering Analysis of Agentic AI-Driven Intrusions Against the Financial Sector",
+  "upload_type": "publication",
+  "publication_type": "report",
+  "description": "<p>In October 2026, the financially motivated threat actor Storm-3358 began targeting organisations in the financial sector using the agentic AI offensive framework ARTEX. Microsoft Threat Intelligence tracks Storm-3358 as a Cambodia-based intrusion cluster that primarily targets financial organisations in Southeast Asia, alongside a smaller number of large financial organisations globally. The actor used ARTEX in combination with conventional automated tools to scan internet-connected systems, exploit security flaws including anonymous file upload and server-side request forgery, and install open-source remote access trojans including WISP, vshell, and AdaptixC2. ARTEX agents leveraged common utilities such as netcat and curl to download these RATs to compromised systems, and used web shells for persistence on compromised web servers. This working paper translates the behavioural patterns described in the Microsoft Security Blog publication into concrete detection opportunities, each tied to a Sigma rule, and identifies the classes of activity that remain invisible to defenders. The analysis covers network connections to published IOC infrastructure, curl-based file downloads, shell execution spawned by PHP processes, and executable permission modifications on downloaded files. It also addresses the limitations of IP-based detection given the actor's use of proxies and VPNs, and the challenge of distinguishing agentic AI tooling from legitimate administrative automation.</p><p><strong>Working draft 0.1, machine drafted.</strong> Companion detection content is in <a href=\"https://github.com/saluca-labs/detection-content\">saluca-labs/detection-content</a> under Apache-2.0.</p>",
+  "creators": [
+    {
+      "name": "Ruvalcaba, Cristian",
+      "affiliation": "Saluca LLC"
+    },
+    {
+      "name": "Saluca Agentic AI Research Team",
+      "affiliation": "Saluca LLC"
+    }
+  ],
+  "keywords": [
+    "detection engineering",
+    "ai security",
+    "sigma rules",
+    "threat detection",
+    "blue team"
+  ],
+  "license": "cc-by-4.0",
+  "access_right": "open",
+  "version": "0.1",
+  "communities": [
+    {
+      "identifier": "saluca"
+    }
+  ],
+  "related_identifiers": [
+    {
+      "identifier": "https://www.microsoft.com/en-us/security/blog/2026/11/06/artex-abuse-expands-as-cybercriminals-target-financial-sector/",
+      "relation": "isDerivedFrom",
+      "resource_type": "publication-report",
+      "scheme": "url"
+    },
+    {
+      "identifier": "https://github.com/saluca-labs/detection-content",
+      "relation": "isSupplementedBy",
+      "resource_type": "software",
+      "scheme": "url"
+    }
+  ],
+  "notes": "MACHINE-DRAFTED WORKING PAPER (Saluca edition_detection, on Cristian's Telegram press of the detection choice for https://www.microsoft.com/en-us/security/blog/2026/11/06/artex-abuse-expands-as-cybercriminals-target-financial-sector/). Built from the primary source and a launcher assessment whose quotes were string-checked against it; nothing was reproduced or detonated, no rule has run against real telemetry, and Sigma rules are schema-checked only. It must be read and edited by the named human author before publication. The report text is CC-BY-4.0; the detection content and tooling are Apache-2.0 per the repository LICENSE. Prepared with AI assistance.",
+  "prereserve_doi": true
+}
